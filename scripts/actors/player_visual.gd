@@ -1,0 +1,47 @@
+extends Node2D
+
+## 玩家占位视觉：原点在脚底，所有绘制都向上生长，保证 y_sort 按脚底排序。
+
+const C_SHADOW := Color(0.0, 0.0, 0.0, 0.30)
+const C_LEG := Color(0.212, 0.212, 0.271)
+const C_TORSO := Color(0.239, 0.416, 0.651)
+const C_SKIN := Color(0.855, 0.702, 0.549)
+const C_HP_BACK := Color(0.0, 0.0, 0.0, 0.65)
+const C_HP := Color(0.839, 0.263, 0.263)
+
+var _facing := Vector2.DOWN
+
+
+func set_facing(direction: Vector2) -> void:
+	if direction.length() < 0.01:
+		return
+	var normalized := direction.normalized()
+	if normalized.distance_to(_facing) < 0.05:
+		return
+	_facing = normalized
+	queue_redraw()
+
+
+func _draw() -> void:
+	draw_colored_polygon(_ellipse(Vector2(0.0, -2.0), 11.0, 5.5), C_SHADOW)
+	draw_rect(Rect2(-6.0, -22.0, 5.0, 20.0), C_LEG)
+	draw_rect(Rect2(1.0, -22.0, 5.0, 20.0), C_LEG)
+	draw_rect(Rect2(-8.0, -42.0, 16.0, 22.0), C_TORSO)
+	draw_circle(Vector2(0.0, -50.0), 8.0, C_SKIN)
+	draw_circle(Vector2(0.0, -50.0) + _facing * 3.0, 2.2, Color(0.157, 0.157, 0.196))
+
+	draw_rect(Rect2(-14.0, -70.0, 28.0, 5.0), C_HP_BACK)
+	draw_rect(Rect2(-13.0, -69.0, 26.0, 3.0), C_HP)
+
+	var font := ThemeDB.fallback_font
+	var text := "HERO"
+	var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+	draw_string(font, Vector2(-width * 0.5, -75.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1.0, 1.0, 1.0, 0.92))
+
+
+func _ellipse(center: Vector2, rx: float, ry: float) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	for i in 16:
+		var angle := TAU * float(i) / 16.0
+		points.append(center + Vector2(cos(angle) * rx, sin(angle) * ry))
+	return points

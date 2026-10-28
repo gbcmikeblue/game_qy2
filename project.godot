@@ -1,0 +1,30 @@
+; Engine configuration file.
+; 复古 2D 等距视角 RPG —— 阶段 A：技术验证
+
+config_version=5
+
+[application]
+
+config/name="Iso RPG Stage A"
+run/main_scene="res://scenes/boot/main.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+
+[autoload]
+
+EventBus="*res://autoload/event_bus.gd"
+GameManager="*res://autoload/game_manager.gd"
+InputManager="*res://autoload/input_manager.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=0
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/canvas_textures/default_texture_filter=0

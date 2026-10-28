@@ -1,0 +1,32 @@
+{
+  "id": "test_map_01",
+  "display_name": "Iso Test Ground",
+  "grid_size": [24, 24],
+  "road_u": [11, 12],
+  "player_spawn": [12, 14],
+  "props": [
+    { "type": "building", "u": 7, "v": 7, "w": 3, "h": 3 },
+    { "type": "building", "u": 15, "v": 10, "w": 2, "h": 2 },
+    { "type": "building", "u": 18, "v": 17, "w": 2, "h": 2 },
+
+    { "type": "tree", "u": 4, "v": 4 },
+    { "type": "tree", "u": 5, "v": 5 },
+    { "type": "tree", "u": 17, "v": 4 },
+    { "type": "tree", "u": 18, "v": 5 },
+    { "type": "tree", "u": 10, "v": 3 },
+    { "type": "tree", "u": 20, "v": 9 },
+    { "type": "tree", "u": 19, "v": 10 },
+    { "type": "tree", "u": 3, "v": 10 },
+    { "type": "tree", "u": 6, "v": 17 },
+    { "type": "tree", "u": 7, "v": 18 },
+    { "type": "tree", "u": 16, "v": 16 },
+    { "type": "tree", "u": 15, "v": 17 },
+    { "type": "tree", "u": 21, "v": 20 },
+    { "type": "tree", "u": 5, "v": 21 },
+
+    { "type": "rock", "u": 13, "v": 3 },
+    { "type": "rock", "u": 2, "v": 13 },
+    { "type": "rock", "u": 21, "v": 15 },
+    { "type": "rock", "u": 17, "v": 21 }
+  ]
+}
