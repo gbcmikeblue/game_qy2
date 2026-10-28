@@ -15,6 +15,11 @@ func _ready() -> void:
 	await get_tree().physics_frame
 	await get_tree().physics_frame
 
+	# 阶段 A 只验证移动与遮挡，先清掉怪物避免战斗干扰断言。
+	for enemy: Node in get_tree().get_nodes_in_group("enemies"):
+		enemy.queue_free()
+	await get_tree().physics_frame
+
 	_test_grid_roundtrip()
 	await _test_wall_containment()
 	await _test_diagonal_speed()
@@ -37,6 +42,8 @@ func _test_wall_containment() -> void:
 		_check(false, "玩家节点未创建")
 		return
 
+	var grid_size: Vector2i = _main.map.grid_size
+	var max_frac := float(grid_size.x - 1) - 0.25
 	var directions: Array[Vector2] = [
 		Vector2.RIGHT, Vector2.LEFT, Vector2.UP, Vector2.DOWN,
 		Vector2(1.0, 1.0).normalized(), Vector2(-1.0, -1.0).normalized(),
@@ -46,7 +53,7 @@ func _test_wall_containment() -> void:
 		for i in 240:
 			await get_tree().physics_frame
 		var frac := _fractional_grid(player.global_position)
-		var inside := frac.x > 0.25 and frac.y > 0.25 and frac.x < 22.75 and frac.y < 22.75
+		var inside := frac.x > 0.25 and frac.y > 0.25 and frac.x < max_frac and frac.y < max_frac
 		_check(inside, "朝 %s 冲撞 4 秒后仍在围墙内：grid(%.2f, %.2f)" % [str(direction.round()), frac.x, frac.y])
 	InputManager.touch_vector = Vector2.ZERO
 

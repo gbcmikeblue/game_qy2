@@ -1,0 +1,52 @@
+{
+  "enemies": [
+    {
+      "id": "forest_wolf",
+      "display_name": "FOREST WOLF",
+      "max_hp": 45,
+      "attack": 14,
+      "defense": 2,
+      "move_speed": 105.0,
+      "attack_range": 46.0,
+      "attack_cooldown": 1.1,
+      "aggro_radius": 220.0,
+      "deaggro_radius": 380.0,
+      "patrol_radius": 70.0,
+      "exp": 12,
+      "body_radius": 11.0,
+      "color": [0.42, 0.44, 0.48]
+    },
+    {
+      "id": "stone_boar",
+      "display_name": "STONE BOAR",
+      "max_hp": 90,
+      "attack": 20,
+      "defense": 8,
+      "move_speed": 70.0,
+      "attack_range": 52.0,
+      "attack_cooldown": 1.6,
+      "aggro_radius": 200.0,
+      "deaggro_radius": 360.0,
+      "patrol_radius": 60.0,
+      "exp": 20,
+      "body_radius": 14.0,
+      "color": [0.45, 0.36, 0.30]
+    },
+    {
+      "id": "cave_bat",
+      "display_name": "CAVE BAT",
+      "max_hp": 32,
+      "attack": 16,
+      "defense": 0,
+      "move_speed": 120.0,
+      "attack_range": 44.0,
+      "attack_cooldown": 0.7,
+      "aggro_radius": 240.0,
+      "deaggro_radius": 400.0,
+      "patrol_radius": 90.0,
+      "exp": 9,
+      "body_radius": 9.0,
+      "color": [0.35, 0.28, 0.42]
+    }
+  ]
+}

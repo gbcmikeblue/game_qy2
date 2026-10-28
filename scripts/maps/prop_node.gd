@@ -29,6 +29,9 @@ func setup(p_kind: int, p_cell: Vector2i, p_footprint: Vector2i = Vector2i.ONE) 
 
 
 func _ready() -> void:
+	# 场景实体属于世界层，需要被玩家与敌人双方都探测到，否则角色会穿墙。
+	collision_layer = PhysLayers.WORLD
+	collision_mask = PhysLayers.PLAYER | PhysLayers.ENEMY
 	position = Iso.grid_to_world(cell + footprint - Vector2i.ONE) + Vector2(0.0, Iso.TILE_H * 0.5)
 	if kind == Kind.BUILDING:
 		body_height = 52.0 + float(maxi(footprint.x, footprint.y)) * 4.0

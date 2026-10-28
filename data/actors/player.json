@@ -1,0 +1,22 @@
+{
+  "player": {
+    "display_name": "HERO",
+    "max_hp": 120,
+    "attack": 20,
+    "defense": 5,
+    "crit_rate": 0.1,
+    "crit_damage": 1.5,
+    "move_speed": 150.0,
+    "attack_range": 72.0,
+    "attack_cooldown": 0.45,
+    "turn_rate": 12.0,
+    "lock_screen_margin": 48.0,
+    "lock_release_margin": 0.0,
+    "auto_approach": true,
+    "approach_stop_ratio": 0.85,
+    "select_deadzone": 0.45,
+    "select_max_angle_deg": 75.0,
+    "select_sector_deg": 35.0,
+    "select_cooldown": 0.18
+  }
+}

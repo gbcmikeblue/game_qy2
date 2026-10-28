@@ -1,16 +1,21 @@
 extends Node2D
 class_name TestMap
 
-## 阶段 A 测试地图：读取 data/maps/test_map_01.json，程序化生成地面、围墙和道具。
-## 对外只暴露三件事：实体挂载点、出生点、世界边界（供相机限位）。
+## 阶段 A/B 测试地图：读取 data/maps/test_map_01.json，程序化生成地面、围墙、道具和怪物。
+## 对外暴露：实体挂载点、出生点、世界边界、阻挡查询、路径器、刷怪入口。
 
 const MAP_PATH := "res://data/maps/test_map_01.json"
+const ENEMY_SCENE := preload("res://scenes/actors/enemies/enemy.tscn")
 
 var grid_size := Vector2i(24, 24)
 var player_spawn := Vector2i(12, 14)
 
+var _map_data: Dictionary = {}
 var _entities: Node2D
 var _prop_defs: Array = []
+var _enemy_defs: Array = []
+var _blocked: Dictionary = {}
+var _pathfinder: GridPathfinder
 
 
 func _ready() -> void:
@@ -19,6 +24,7 @@ func _ready() -> void:
 	_build_entities_root()
 	_build_walls()
 	_build_props()
+	_build_enemies()
 
 
 func get_entity_root() -> Node2D:
@@ -35,6 +41,25 @@ func world_bounds() -> Rect2:
 	var top := -Iso.TILE_H * 0.5
 	var bottom := Iso.grid_to_world(grid_size - Vector2i.ONE).y + Iso.TILE_H * 0.5
 	return Rect2(left, top, right - left, bottom - top)
+
+
+func is_blocked(cell: Vector2i) -> bool:
+	return _blocked.has(cell)
+
+
+func get_pathfinder() -> GridPathfinder:
+	if _pathfinder == null:
+		_pathfinder = GridPathfinder.new()
+		_pathfinder.build(grid_size, _blocked.keys())
+	return _pathfinder
+
+
+## 供测试或事件脚本按需刷怪，返回创建的敌人节点。
+func spawn_enemy(type_id: String, cell: Vector2i) -> Node:
+	var enemy := ENEMY_SCENE.instantiate()
+	enemy.setup(type_id, cell, self)
+	_entities.add_child(enemy)
+	return enemy
 
 
 func _build_ground() -> void:
@@ -61,7 +86,9 @@ func _build_walls() -> void:
 		for v in grid_size.y:
 			var on_edge := u == 0 or v == 0 or u == grid_size.x - 1 or v == grid_size.y - 1
 			if on_edge:
-				_spawn_prop(PropNode.Kind.WALL, Vector2i(u, v), Vector2i.ONE)
+				var cell := Vector2i(u, v)
+				_blocked[cell] = true
+				_spawn_prop(PropNode.Kind.WALL, cell, Vector2i.ONE)
 
 
 func _build_props() -> void:
@@ -80,7 +107,23 @@ func _build_props() -> void:
 			_:
 				push_warning("未知的道具类型: %s" % type_name)
 				continue
+		_mark_blocked(cell, footprint)
 		_spawn_prop(kind, cell, footprint)
+
+
+func _build_enemies() -> void:
+	for entry: Dictionary in _enemy_defs:
+		var type_id := String(entry.get("type", ""))
+		var cell := Vector2i(int(entry.get("u", 0)), int(entry.get("v", 0)))
+		var count := maxi(1, int(entry.get("count", 1)))
+		for i in count:
+			spawn_enemy(type_id, cell)
+
+
+func _mark_blocked(cell: Vector2i, footprint: Vector2i) -> void:
+	for du in footprint.x:
+		for dv in footprint.y:
+			_blocked[cell + Vector2i(du, dv)] = true
 
 
 func _spawn_prop(kind: int, cell: Vector2i, footprint: Vector2i) -> void:
@@ -88,8 +131,6 @@ func _spawn_prop(kind: int, cell: Vector2i, footprint: Vector2i) -> void:
 	prop.setup(kind, cell, footprint)
 	_entities.add_child(prop)
 
-
-var _map_data: Dictionary = {}
 
 func _load_map_data() -> void:
 	if not FileAccess.file_exists(MAP_PATH):
@@ -111,3 +152,4 @@ func _load_map_data() -> void:
 	var spawn: Array = _map_data.get("player_spawn", [12, 14])
 	player_spawn = Vector2i(int(spawn[0]), int(spawn[1]))
 	_prop_defs = _map_data.get("props", [])
+	_enemy_defs = _map_data.get("enemies", [])
