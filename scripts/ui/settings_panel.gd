@@ -9,19 +9,28 @@ extends CanvasLayer
 
 signal closed
 
-## 面板设计尺寸（1280×720 逻辑基准下的排版坐标系，内部子控件都按它摆位）。
-const PANEL_DESIGN := Vector2(640.0, 668.0)
-## 面板占视口的相对尺寸与最大放大倍数（§3.5：居中锚点 + 相对尺寸，小屏不溢界、大屏不过小）。
-const PANEL_WIDTH_RATIO := 0.7
-const PANEL_HEIGHT_RATIO := 0.75
+## 面板框架设计尺寸：只包含「标题 + 滚动视口 + 提示 + 页脚」，
+## 高度远小于内容高度（内容靠 ScrollContainer 滚动）。
+## 这样面板缩放由「字要多大」决定，而不是被整块内容压到 0.67 倍导致 7dp 字号。
+const PANEL_DESIGN := Vector2(640.0, 480.0)
+## 面板占可用区的比例（内容可滚动后不再需要留大边距）。
+const PANEL_WIDTH_RATIO := 0.92
+const PANEL_HEIGHT_RATIO := 0.95
 const PANEL_MAX_SCALE := 1.2
-const PANEL_MIN_SCALE := 0.4
+const PANEL_MIN_SCALE := 0.6
+## 正文可读性下限（dp）。手机上为满足它会临时抬高缩放上限。
+const BODY_MIN_DP := 14.0
+
+## 文字角色（设计单位，随面板整体缩放）。正文 20 号在手机上面板缩放约 1.19 → 14.6dp。
+const FONT_TITLE := 30
+const FONT_SECTION := 22
+const FONT_BODY := 20
+const FONT_HELPER := 17
 
 ## 固定区：标题/语言在上，提示与页脚在下；中间给滚动区。
-const HEADER_HEIGHT := 108.0
-const SCROLL_RECT := Rect2(12.0, 108.0, 616.0, 444.0)
-const NOTICE_RECT := Rect2(28.0, 558.0, 584.0, 26.0)
-const FOOTER_TOP := 596.0
+const SCROLL_RECT := Rect2(12.0, 104.0, 616.0, 290.0)
+const NOTICE_RECT := Rect2(28.0, 400.0, 584.0, 28.0)
+const FOOTER_TOP := 436.0
 
 ## 滚动内容（坐标相对内容容器，宽度 600）。
 const BODY_WIDTH := 600.0
@@ -111,10 +120,16 @@ func _layout() -> void:
 	var usable := Vector2(
 		maxf(1.0, viewport.x - insets.x - insets.z),
 		maxf(1.0, viewport.y - insets.y - insets.w))
-	var scale_factor := minf(
+	# 空间允许的最大缩放。
+	var by_space := minf(
 		usable.x * PANEL_WIDTH_RATIO / PANEL_DESIGN.x,
 		usable.y * PANEL_HEIGHT_RATIO / PANEL_DESIGN.y)
-	scale_factor = clampf(scale_factor, PANEL_MIN_SCALE, PANEL_MAX_SCALE)
+	# 可读性要求的最小缩放：正文至少要 BODY_MIN_DP。
+	var readable := DisplayAdapter.dp(BODY_MIN_DP) / float(FONT_BODY)
+	# 上限按「口径」而不是平台判定：dp 越大（手机）越需要更大的缩放，
+	# 桌面（96dpi，1 逻辑像素 ≈ 1.67dp）则停在 1.2 就够大。绝对上限 1.6 防止离谱。
+	var upper := minf(maxf(PANEL_MAX_SCALE, readable * 1.1), 1.6)
+	var scale_factor := clampf(minf(by_space, upper), PANEL_MIN_SCALE, upper)
 	# 面板本体保持设计尺寸，用 scale 整体缩放：内部子控件坐标一个不用改。
 	_panel.size = PANEL_DESIGN
 	_panel.scale = Vector2(scale_factor, scale_factor)
@@ -151,17 +166,17 @@ func _build() -> void:
 	_body.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_scroll.add_child(_body)
 
-	_title = _label(Vector2(28.0, 14.0), Vector2(560.0, 40.0), 28, _panel)
-	_language_label = _label(Vector2(28.0, 62.0), Vector2(240.0, 32.0), 20, _panel)
+	_title = _label(Vector2(28.0, 8.0), Vector2(560.0, 46.0), FONT_TITLE, _panel)
+	_language_label = _label(Vector2(28.0, 60.0), Vector2(240.0, 34.0), FONT_SECTION, _panel)
 	var index := 0
 	for code: String in Locale.SUPPORTED:
-		var button := _button(_panel, Vector2(300.0 + float(index) * 150.0, 58.0),
+		var button := _button(_panel, Vector2(300.0 + float(index) * 150.0, 56.0),
 				Vector2(132.0, 40.0))
 		button.pressed.connect(_on_language_pressed.bind(code))
 		_language_buttons.append(button)
 		index += 1
 
-	_notice = _label(NOTICE_RECT.position, NOTICE_RECT.size, 16, _panel)
+	_notice = _label(NOTICE_RECT.position, NOTICE_RECT.size, FONT_HELPER, _panel)
 
 	_reset_button = _button(_panel, Vector2(28.0, FOOTER_TOP), Vector2(168.0, 42.0))
 	_reset_button.pressed.connect(_on_reset_pressed)
@@ -170,25 +185,25 @@ func _build() -> void:
 	_close_button = _button(_panel, Vector2(368.0, FOOTER_TOP), Vector2(160.0, 42.0))
 	_close_button.pressed.connect(_close)
 
-	_binding_title = _label(Vector2(28.0, BINDING_TITLE_TOP), Vector2(560.0, 32.0), 20)
+	_binding_title = _label(Vector2(28.0, BINDING_TITLE_TOP), Vector2(560.0, 32.0), FONT_SECTION)
 	var row := 0
 	for action: String in GameSettings.ACTIONS:
 		var y := BINDING_ROW_TOP + float(row) * ROW_HEIGHT
-		_row_labels[action] = _label(Vector2(40.0, y), Vector2(300.0, 34.0), 18)
+		_row_labels[action] = _label(Vector2(40.0, y), Vector2(300.0, 34.0), FONT_BODY)
 		var key_button := _button(_body, Vector2(352.0, y - 2.0), Vector2(208.0, 34.0))
 		key_button.pressed.connect(_on_key_pressed.bind(action))
 		_row_buttons[action] = key_button
 		row += 1
 
-	_combat_title = _label(Vector2(28.0, COMBAT_TITLE_TOP), Vector2(560.0, 32.0), 20)
+	_combat_title = _label(Vector2(28.0, COMBAT_TITLE_TOP), Vector2(560.0, 32.0), FONT_SECTION)
 	var combat_row := 0
 	for key: String in GameSettings.COMBAT_KEYS:
 		var y := COMBAT_ROW_TOP + float(combat_row) * ROW_HEIGHT
-		_combat_labels[key] = _label(Vector2(40.0, y), Vector2(300.0, 34.0), 18)
+		_combat_labels[key] = _label(Vector2(40.0, y), Vector2(300.0, 34.0), FONT_BODY)
 		var minus := _button(_body, Vector2(348.0, y - 2.0), Vector2(44.0, 34.0))
 		minus.set_caption("-")
 		minus.pressed.connect(_on_combat_step.bind(key, -1))
-		var value := _label(Vector2(400.0, y), Vector2(124.0, 34.0), 18)
+		var value := _label(Vector2(400.0, y), Vector2(124.0, 34.0), FONT_BODY)
 		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_combat_values[key] = value
 		var plus := _button(_body, Vector2(532.0, y - 2.0), Vector2(44.0, 34.0))
@@ -196,7 +211,7 @@ func _build() -> void:
 		plus.pressed.connect(_on_combat_step.bind(key, 1))
 		combat_row += 1
 
-	_hint = _label(Vector2(28.0, HINT_TOP), Vector2(560.0, 26.0), 15)
+	_hint = _label(Vector2(28.0, HINT_TOP), Vector2(560.0, 26.0), FONT_HELPER)
 
 	_build_display_section()
 
@@ -204,7 +219,7 @@ func _build() -> void:
 ## 「显示」区块：分辨率档位（仅桌面）+ 档位说明 + 画质 + 视野 + 界面缩放 + 窗口状态提示。
 ## 移动端没有窗口尺寸可选，整块档位区直接跳过并把后面的行往上收（方案 §7.3）。
 func _build_display_section() -> void:
-	_display_title = _label(Vector2(28.0, DISPLAY_TITLE_TOP), Vector2(560.0, 32.0), 20)
+	_display_title = _label(Vector2(28.0, DISPLAY_TITLE_TOP), Vector2(560.0, 32.0), FONT_SECTION)
 	var y := DISPLAY_TITLE_TOP + 36.0
 
 	if not DisplayAdapter.is_mobile():
@@ -223,12 +238,12 @@ func _build_display_section() -> void:
 
 		var rows := ceili(float(ids.size()) / float(PRESET_COLUMNS))
 		y += float(rows) * PRESET_ROW_HEIGHT + 6.0
-		_preset_info = _label(Vector2(28.0, y), Vector2(560.0, 58.0), 16)
+		_preset_info = _label(Vector2(28.0, y), Vector2(560.0, 58.0), FONT_HELPER)
 		_preset_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_preset_info.add_theme_color_override("font_color", Color(0.80, 0.88, 1.0, 1.0))
 		y += 64.0
 
-	_quality_title = _label(Vector2(28.0, y), Vector2(560.0, 32.0), 20)
+	_quality_title = _label(Vector2(28.0, y), Vector2(560.0, 32.0), FONT_SECTION)
 	y += 34.0
 	var quality_row := 0
 	for tier: String in GameSettings.QUALITY_TIERS:
@@ -239,7 +254,7 @@ func _build_display_section() -> void:
 		quality_row += 1
 	y += 44.0
 
-	_view_title = _label(Vector2(28.0, y), Vector2(560.0, 32.0), 20)
+	_view_title = _label(Vector2(28.0, y), Vector2(560.0, 32.0), FONT_SECTION)
 	y += 34.0
 	var view_row := 0
 	for key: String in DisplayAdapter.VIEW_SCALES:
@@ -249,18 +264,18 @@ func _build_display_section() -> void:
 		view_row += 1
 	y += 44.0
 
-	_ui_scale_label = _label(Vector2(40.0, y), Vector2(280.0, 34.0), 18)
+	_ui_scale_label = _label(Vector2(40.0, y), Vector2(280.0, 34.0), FONT_BODY)
 	var minus := _button(_body, Vector2(348.0, y - 2.0), Vector2(44.0, 34.0))
 	minus.set_caption("-")
 	minus.pressed.connect(_on_ui_scale_step.bind(-1))
-	_ui_scale_value = _label(Vector2(400.0, y), Vector2(124.0, 34.0), 18)
+	_ui_scale_value = _label(Vector2(400.0, y), Vector2(124.0, 34.0), FONT_BODY)
 	_ui_scale_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var plus := _button(_body, Vector2(532.0, y - 2.0), Vector2(44.0, 34.0))
 	plus.set_caption("+")
 	plus.pressed.connect(_on_ui_scale_step.bind(1))
 	y += 42.0
 
-	_free_note = _label(Vector2(28.0, y), Vector2(560.0, 48.0), 15)
+	_free_note = _label(Vector2(28.0, y), Vector2(560.0, 48.0), FONT_HELPER)
 	_free_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 
@@ -282,6 +297,7 @@ func _button(parent: Control, position: Vector2, size: Vector2) -> UiButton:
 	var button := UiButton.new()
 	button.position = position
 	button.size = size
+	button.font_size = FONT_BODY
 	parent.add_child(button)
 	return button
 

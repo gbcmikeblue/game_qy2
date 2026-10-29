@@ -8,10 +8,8 @@
 ## 血条填充相对 HpBack 的内缩（左右各 2 逻辑像素），宽度按 HpBack 的实时宽度算比例，
 ## 不再依赖硬编码的像素总宽（原 HP_FILL_MAX = 276 是 280-4 的写死值）。
 const HP_FILL_INSET := 2.0
-## 字号基准（1280×720 逻辑基准），统一乘 DisplayAdapter.ui_scale，不再逐控件硬编码。
-const FONT_SIZE_DEBUG := 18
-const FONT_SIZE_HP := 20
-const FONT_SIZE_HINT := 16
+## 字号统一走 DisplayAdapter 的文字角色（dp → 逻辑像素），与设置面板同一套规范。
+## 调试信息不参与 ui_scale，避免大字号下撑高压到左下角血条（见 NO_UI_SCALE）。
 ## 调试信息不参与界面缩放：它的行数会撑高控件，放大后会压到左下角血条区。
 const NO_UI_SCALE := ["DebugLabel"]
 const SETTINGS_PANEL := preload("res://scenes/ui/settings_panel.tscn")
@@ -63,16 +61,21 @@ func _exit_tree() -> void:
 		DisplayAdapter.layout_changed.disconnect(_on_layout_changed)
 
 
-## 字号 dp 化：基准字号 × ui_scale，控件不再各自写死数字。
-## Teko 字身偏窄偏小，基准值已比常规上调一档。
+## 字号 dp 化：与设置面板共用角色表，真机上正文 ≥14dp、辅助说明 ≥12dp。
 func _apply_fonts() -> void:
-	_debug_label.add_theme_font_size_override("font_size", FONT_SIZE_DEBUG)
-	_hp_label.add_theme_font_size_override("font_size", _font_size(FONT_SIZE_HP))
-	_hint_label.add_theme_font_size_override("font_size", _font_size(FONT_SIZE_HINT))
+	_debug_label.add_theme_font_size_override("font_size", _debug_font_px())
+	_hp_label.add_theme_font_size_override("font_size",
+		DisplayAdapter.text_px(DisplayAdapter.TEXT_BODY_DP))
+	_hint_label.add_theme_font_size_override("font_size",
+		DisplayAdapter.text_px(DisplayAdapter.TEXT_HELPER_DP))
+	_settings_button.font_size = DisplayAdapter.text_px(DisplayAdapter.TEXT_HELPER_DP)
+	_settings_button.queue_redraw()
 
 
-func _font_size(base: int) -> int:
-	return maxi(10, roundi(float(base) * DisplayAdapter.ui_scale))
+## 调试信息固定 12dp 且不吃 ui_scale（它不参与界面缩放）。
+func _debug_font_px() -> int:
+	return maxi(11, roundi(DisplayAdapter.dp_to_ui(
+		DisplayAdapter.TEXT_HELPER_DP, DisplayAdapter.dpi, DisplayAdapter.content_scale, 1.0)))
 
 
 ## HUD 锚定「视口矩形内缩 safe_insets 后的矩形」：元素本身仍用边锚点，
@@ -222,11 +225,11 @@ func _update_debug() -> void:
 	if is_instance_valid(player):
 		var world: Vector2 = player.global_position
 		var grid := Iso.world_to_grid(world)
-		lines.append(Locale.t("hud.world", [world.x, world.y]))
-		lines.append(Locale.t("hud.grid", [grid.x, grid.y]))
-		lines.append(Locale.t("hud.speed", [(player as CharacterBody2D).velocity.length()]))
-		# 自动接近与持续攻击合成一行：9 行在 720 逻辑高度下会挤到左下角血条区。
+		# 字号放大后调试块会压到左下角血条，这里把 9 行合并成 6 行。
 		lines.append("%s  %s" % [
+			Locale.t("hud.world", [world.x, world.y]), Locale.t("hud.grid", [grid.x, grid.y])])
+		lines.append("%s  %s  %s" % [
+			Locale.t("hud.speed", [(player as CharacterBody2D).velocity.length()]),
 			Locale.t("hud.auto.on") if player.is_auto_approaching() else Locale.t("hud.auto.off"),
 			Locale.t("hud.auto_attack.on") if player.is_auto_attack_active()
 				else Locale.t("hud.auto_attack.off"),

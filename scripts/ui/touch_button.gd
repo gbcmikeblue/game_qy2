@@ -106,7 +106,8 @@ func _draw() -> void:
 	draw_arc(center, radius, 0.0, TAU, 40, Color(1.0, 1.0, 1.0, 0.55 * dim), 2.5, true)
 
 	var font := Locale.font
-	var font_size := 20
+	# 与 HUD/设置面板同一套文字角色：正文 14dp。
+	var font_size := DisplayAdapter.text_px(DisplayAdapter.TEXT_BODY_DP)
 	var width := font.get_string_size(caption, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
 	draw_string(font, center + Vector2(-width * 0.5, font_size * 0.35), caption,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(1.0, 1.0, 1.0, 0.9 * dim))

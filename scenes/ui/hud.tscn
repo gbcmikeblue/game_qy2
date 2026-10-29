@@ -68,7 +68,7 @@ color = Color(0.839, 0.263, 0.263, 1)
 anchor_top = 1.0
 anchor_bottom = 1.0
 offset_left = 32.0
-offset_top = -324.0
+offset_top = -332.0
 offset_right = 312.0
 offset_bottom = -298.0
 
@@ -84,7 +84,7 @@ anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
 offset_left = -300.0
-offset_top = -44.0
+offset_top = -52.0
 offset_right = 300.0
 offset_bottom = -18.0
 horizontal_alignment = 1

@@ -63,6 +63,8 @@ var view_area_scale := 1.0
 ## 调试构建放开自由缩放：不加最小尺寸、不锁窗口、不吸附档位。
 var free_resize := false
 
+## 设备 dpi（refresh 时缓存；测试可注入以模拟其它设备）。
+var dpi := 96.0
 ## 屏幕物理像素。
 var screen_size := BASE_SIZE
 ## 根视图逻辑坐标尺寸（HUD 锚点与输入事件的坐标系，canvas_items + expand 下随宽高比变化）。
@@ -278,9 +280,12 @@ func refresh() -> void:
 	if logical_size.x < 1.0 or logical_size.y < 1.0:
 		logical_size = BASE_SIZE
 	content_scale = screen_size.x / logical_size.x
+	dpi = float(DisplayServer.screen_get_dpi())
+	if dpi < 1.0:
+		dpi = 96.0
 	render_size = render_size_for(screen_size, render_scale())
 	world_zoom = zoom_for(render_size, view_area_scale)
-	safe_insets = compute_safe_insets(logical_size, screen_size, content_scale)
+	safe_insets = compute_safe_insets(logical_size, screen_size, content_scale, dpi)
 	layout_changed.emit()
 
 
@@ -342,7 +347,20 @@ static func dp_to_ui(dp: float, dpi: float, content_scale_value: float, ui_scale
 
 ## dp → 逻辑 UI 单位（用当前设备的 dpi / content_scale / ui_scale）。
 func dp(dp_value: float) -> float:
-	return dp_to_ui(dp_value, float(DisplayServer.screen_get_dpi()), content_scale, ui_scale)
+	return dp_to_ui(dp_value, dpi, content_scale, ui_scale)
+
+
+## 文字角色（dp）。所有界面共用这一套，避免各处硬编码字号导致同屏大小不一。
+## 移动端可读性下限：正文 ≥14dp、辅助说明 ≥12dp、标题 ≥20dp。
+const TEXT_TITLE_DP := 22.0
+const TEXT_SECTION_DP := 16.0
+const TEXT_BODY_DP := 14.0
+const TEXT_HELPER_DP := 12.0
+
+
+## 角色字号 → 逻辑像素（已含 dpi / content_scale / ui_scale 三重换算）。
+func text_px(role_dp: float) -> int:
+	return maxi(11, roundi(dp(role_dp)))
 
 
 ## 触控热区补偿：把矩形外扩到物理尺寸不小于 min_dp（逻辑单位，按当前 dpi/content_scale 换算）。
@@ -358,8 +376,8 @@ func expand_hit_rect(rect: Rect2, min_dp: float) -> Rect2:
 ## 安全区内缩（逻辑坐标）。取「系统安全区」与「设计内缩」的较大者：
 ## 系统返回空或全屏时只剩设计内缩，不会因为读不到安全区就没有边距。
 static func compute_safe_insets(viewport: Vector2, screen: Vector2,
-		content_scale_value: float) -> Vector4:
-	var dpi := float(DisplayServer.screen_get_dpi())
+		content_scale_value: float, dpi_value := -1.0) -> Vector4:
+	var dpi := dpi_value if dpi_value > 0.0 else float(DisplayServer.screen_get_dpi())
 	var design := dp_to_ui(SAFE_INSET_DP, dpi, content_scale_value, 1.0)
 	var insets := Vector4(design, design, design, design)
 

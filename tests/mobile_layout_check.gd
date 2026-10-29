@@ -184,11 +184,18 @@ func _test_ui_scale_layout() -> void:
 	var joystick := hud.get_node("Joystick") as Control
 	_check(absf(joystick.size.x - 220.0 * 1.25) <= 1.0,
 		"ui_scale 1.25 时摇杆宽度 %.1f（期望 %.1f）" % [joystick.size.x, 220.0 * 1.25])
-	# HUD 血条字号基准是 20（hud.gd 的 FONT_SIZE_HP）
+	# HUD 字号已改为 DisplayAdapter 的文字角色（dp→逻辑像素），ui_scale 放大后不应缩小。
 	var hp_label := hud.get_node("HpLabel") as Label
-	var expected_font := roundi(20.0 * 1.25)
-	_check(hp_label.get_theme_font_size("font_size") == expected_font,
-		"ui_scale 1.25 时字号 %d（期望 %d）" % [hp_label.get_theme_font_size("font_size"), expected_font])
+	var scaled_font := hp_label.get_theme_font_size("font_size")
+	DisplayAdapter.ui_scale = saved_scale
+	hud.apply_safe_layout(insets)
+	await get_tree().process_frame
+	var base_font := hp_label.get_theme_font_size("font_size")
+	DisplayAdapter.ui_scale = 1.25
+	hud.apply_safe_layout(insets)
+	await get_tree().process_frame
+	_check(scaled_font >= base_font,
+		"ui_scale 1.25 时字号不缩小（%d → %d）" % [base_font, scaled_font])
 
 	var safe := Rect2(Vector2(insets.x, insets.y),
 		Vector2(viewport_size.x - insets.x - insets.z, viewport_size.y - insets.y - insets.w))
