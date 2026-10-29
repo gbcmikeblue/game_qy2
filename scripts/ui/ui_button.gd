@@ -11,11 +11,26 @@ signal pressed
 @export var highlight := false
 
 var _held := false
+## 禁用态：置灰且不响应（用于当前显示器放不下的分辨率档位）。
+var _disabled := false
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	Locale.language_changed.connect(_on_language_changed)
+
+
+func set_disabled(value: bool) -> void:
+	if _disabled == value:
+		return
+	_disabled = value
+	if _disabled:
+		_held = false
+	queue_redraw()
+
+
+func is_disabled() -> bool:
+	return _disabled
 
 
 func _exit_tree() -> void:
@@ -46,6 +61,8 @@ func _on_language_changed(_code: String) -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
+	if _disabled:
+		return
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			_held = true
@@ -72,12 +89,17 @@ func _draw() -> void:
 		fill = Color(0.24, 0.40, 0.28, 0.95)
 	if _held:
 		fill = fill.lightened(0.12)
+	var dim := 1.0
+	if _disabled:
+		fill = Color(0.12, 0.13, 0.15, 0.55)
+		dim = 0.45
 	draw_rect(rect, fill, true)
-	draw_rect(rect, Color(1.0, 1.0, 1.0, 0.55), false, 2.0)
+	draw_rect(rect, Color(1.0, 1.0, 1.0, 0.55 * dim), false, 2.0)
 
 	var font := Locale.font
 	if font == null:
 		return
 	var text_size := font.get_string_size(caption, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
 	var pos := Vector2((size.x - text_size.x) * 0.5, (size.y + text_size.y * 0.55) * 0.5)
-	draw_string(font, pos, caption, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(1.0, 1.0, 1.0, 0.95))
+	draw_string(font, pos, caption, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size,
+			Color(1.0, 1.0, 1.0, 0.95 * dim))

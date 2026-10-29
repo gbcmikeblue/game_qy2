@@ -320,17 +320,15 @@ func _test_settings_panel() -> void:
 
 	Locale.set_language("zh")
 	await get_tree().process_frame
+	# 面板内容已放进 ScrollContainer，标签层级更深，这里改为递归查找。
 	var title: Node = null
 	var combat_title: Node = null
-	for child: Node in panel.get_children():
-		if child is ColorRect and (child as ColorRect).color.a > 0.9:
-			for sub: Node in child.get_children():
-				if sub is Label:
-					var text := String((sub as Label).text)
-					if text == "设置":
-						title = sub
-					elif text == "玩家战斗":
-						combat_title = sub
+	for sub: Node in panel.find_children("*", "Label", true, false):
+		var text := String((sub as Label).text)
+		if text == "设置":
+			title = sub
+		elif text == "玩家战斗":
+			combat_title = sub
 	_check(title != null, "设置面板标题随语言切换为中文")
 	_check(combat_title != null, "设置面板含「玩家战斗」区块")
 
