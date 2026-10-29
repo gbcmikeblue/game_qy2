@@ -160,23 +160,27 @@ func _test_background_pause() -> void:
 	GameManager.set_paused(false)
 	_check(not GameManager.is_paused, "清空原因后恢复运行")
 
-	# 手动暂停（ESC）不得顶掉设置面板的暂停。
+	# 手动暂停（ESC）不得顶掉设置面板的暂停：ESC 走 release_pause(手动)，
+	# 而 set_paused(false) 是「清空全部原因」的兼容入口（方案 §7.7），二者语义不同。
+	GameManager.clear_pauses()
 	GameManager.hold_pause(GameManager.PAUSE_SETTINGS)
-	GameManager.set_paused(true)
-	GameManager.set_paused(false)
+	GameManager.hold_pause(GameManager.PAUSE_MANUAL)
+	GameManager.release_pause(GameManager.PAUSE_MANUAL)
 	_check(GameManager.is_paused, "手动暂停释放后设置面板的暂停仍在")
 	_check(GameManager.pause_reasons() == ["settings"], "剩余暂停原因只有 settings（%s）"
 		% str(GameManager.pause_reasons()))
 
 	# 同一原因重复持有只广播一次状态变化。
-	var emitted := 0
-	var counter := func(_paused: bool) -> void: emitted += 1
-	EventBus.game_paused.connect(counter)
+	# 计数放 Array 里：GDScript 的 lambda 按值捕获局部变量，直接 ++ 不会改到外层。
 	GameManager.clear_pauses()
+	var emitted: Array[bool] = []
+	var counter := func(paused: bool) -> void: emitted.append(paused)
+	EventBus.game_paused.connect(counter)
 	GameManager.hold_pause(GameManager.PAUSE_MANUAL)
 	GameManager.hold_pause(GameManager.PAUSE_MANUAL)
 	EventBus.game_paused.disconnect(counter)
-	_check(emitted == 1, "同一原因重复持有只广播一次暂停状态（实际 %d）" % emitted)
+	_check(emitted.size() == 1 and emitted[0],
+		"同一原因重复持有只广播一次暂停状态（实际 %d）" % emitted.size())
 	GameManager.clear_pauses()
 
 	var config := ConfigFile.new()

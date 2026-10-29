@@ -132,8 +132,8 @@ func _test_settings_validation() -> void:
 	_check(is_equal_approx(GameSettings.display_ui_scale(), 1.0),
 		"ui_scale 0.99 吸附到 1.0（实际 %.2f）" % GameSettings.display_ui_scale())
 	GameSettings.set_display_value("ui_scale", 9.0)
-	_check(is_equal_approx(GameSettings.display_ui_scale(), 1.3),
-		"ui_scale 越界吸附到 1.3（实际 %.2f）" % GameSettings.display_ui_scale())
+	_check(is_equal_approx(GameSettings.display_ui_scale(), 1.2),
+		"ui_scale 越界吸附到上限 1.2（实际 %.2f）" % GameSettings.display_ui_scale())
 
 	GameSettings.set_display_value("quality_tier", "ultra")
 	_check(GameSettings.display_quality() == "auto",
