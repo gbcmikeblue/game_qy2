@@ -5,7 +5,7 @@ class_name TestMap
 ## 对外暴露：实体挂载点、出生点、世界边界、阻挡查询、路径器、刷怪入口。
 
 const MAP_PATH := "res://data/maps/test_map_01.json"
-const ENEMY_SCENE := preload("res://scenes/actors/enemies/enemy.tscn")
+const ENEMY_SCENE := preload("res://scenes/actors/enemy/enemy.tscn")
 
 var grid_size := Vector2i(24, 24)
 var player_spawn := Vector2i(12, 14)

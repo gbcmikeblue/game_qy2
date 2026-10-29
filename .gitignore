@@ -15,15 +15,8 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
-# 原始参考素材（仅保留在本地，不入库）
-/1.webp
-/2.webp
-/3.webp
-/4.webp
-/5.webp
-
-# 上述原始素材的 Godot 导入元数据
-/*.webp.import
+# 原始参考素材（仅保留在本地，不入库、不入包）
+/refs/
 
 # 测试
 /mytest
