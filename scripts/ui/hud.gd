@@ -63,19 +63,12 @@ func _exit_tree() -> void:
 
 ## 字号 dp 化：与设置面板共用角色表，真机上正文 ≥14dp、辅助说明 ≥12dp。
 func _apply_fonts() -> void:
-	_debug_label.add_theme_font_size_override("font_size", _debug_font_px())
-	_hp_label.add_theme_font_size_override("font_size",
-		DisplayAdapter.text_px(DisplayAdapter.TEXT_BODY_DP))
-	_hint_label.add_theme_font_size_override("font_size",
-		DisplayAdapter.text_px(DisplayAdapter.TEXT_HELPER_DP))
-	_settings_button.font_size = DisplayAdapter.text_px(DisplayAdapter.TEXT_HELPER_DP)
+	_debug_label.add_theme_font_size_override("font_size",
+		DisplayAdapter.text_px_fixed("helper"))
+	_hp_label.add_theme_font_size_override("font_size", DisplayAdapter.text_px("body"))
+	_hint_label.add_theme_font_size_override("font_size", DisplayAdapter.text_px("helper"))
+	_settings_button.font_size = DisplayAdapter.text_px("helper")
 	_settings_button.queue_redraw()
-
-
-## 调试信息固定 12dp 且不吃 ui_scale（它不参与界面缩放）。
-func _debug_font_px() -> int:
-	return maxi(11, roundi(DisplayAdapter.dp_to_ui(
-		DisplayAdapter.TEXT_HELPER_DP, DisplayAdapter.dpi, DisplayAdapter.content_scale, 1.0)))
 
 
 ## HUD 锚定「视口矩形内缩 safe_insets 后的矩形」：元素本身仍用边锚点，

@@ -350,17 +350,28 @@ func dp(dp_value: float) -> float:
 	return dp_to_ui(dp_value, dpi, content_scale, ui_scale)
 
 
-## 文字角色（dp）。所有界面共用这一套，避免各处硬编码字号导致同屏大小不一。
-## 移动端可读性下限：正文 ≥14dp、辅助说明 ≥12dp、标题 ≥20dp。
-const TEXT_TITLE_DP := 22.0
-const TEXT_SECTION_DP := 16.0
-const TEXT_BODY_DP := 14.0
-const TEXT_HELPER_DP := 12.0
+## 文字角色表：所有界面共用，避免各处硬编码字号。
+## px = 桌面基线（1280×720 逻辑下的设计像素），dp = 移动端可读性下限；
+## 实际字号取两者较大值——桌面 96dpi 下 dp 换算出的像素偏小，手机 480dpi 下 dp 才是主导。
+const TEXT_ROLES := {
+	"title": {"px": 28, "dp": 22.0},
+	"section": {"px": 20, "dp": 16.0},
+	"body": {"px": 20, "dp": 14.0},
+	"helper": {"px": 16, "dp": 12.0},
+}
 
 
-## 角色字号 → 逻辑像素（已含 dpi / content_scale / ui_scale 三重换算）。
-func text_px(role_dp: float) -> int:
-	return maxi(11, roundi(dp(role_dp)))
+## 角色名 → 逻辑像素（dp 已含 dpi / content_scale / ui_scale）。
+func text_px(role: String) -> int:
+	var spec: Dictionary = TEXT_ROLES.get(role, TEXT_ROLES["body"])
+	return maxi(int(spec["px"]), roundi(dp(float(spec["dp"]))))
+
+
+## 同上，但不吃 ui_scale（调试信息这类不参与界面缩放的元素用）。
+func text_px_fixed(role: String) -> int:
+	var spec: Dictionary = TEXT_ROLES.get(role, TEXT_ROLES["body"])
+	var scaled := dp_to_ui(float(spec["dp"]), dpi, content_scale, 1.0)
+	return maxi(int(spec["px"]), roundi(scaled))
 
 
 ## 触控热区补偿：把矩形外扩到物理尺寸不小于 min_dp（逻辑单位，按当前 dpi/content_scale 换算）。
