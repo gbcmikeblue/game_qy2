@@ -1,22 +1,24 @@
 extends CharacterBody2D
 
-## 玩家：移动 + 锁定式攻击（屏幕内候选 + 自动接近） + 受击/死亡/复活。
+## 玩家：移动 + 点选目标 + 锁定式攻击 + 受击/死亡/复活。
 ##
-## 目标选择交互（按住目标按钮 + 甩动摇杆）：
-## 1. 按住按钮 -> 进入选择模式，摇杆不再驱动移动，改由甩动方向切换“预览目标”；
-##    预览初始为当前锁定目标，没有锁定时取屏幕内最近目标。
-## 2. 甩动方向与候选方位的夹角取最小者（<= select_max_angle_deg）；同一方向按住不会
-##    重复切换（需回中位或换一个夹角 > select_sector_deg 的方向），并有 select_cooldown 间隔。
-## 3. 松开按钮 -> 预览目标成为新的锁定目标；没有可切换目标时保持原选择不变。
-## 4. 遮挡不作为筛选条件：只要目标在可见安全矩形内就可选中，被建筑挡住也允许。
-## 5. 攻击（ATK 按钮 / 空格）保持独立，始终作用于已确认的锁定目标。
+## 选中与攻击完全分离（本文件是这两条链路的唯一边界）：
+## 1. 选中：外部（点击/点触的世界拾取器）调用 select_target()/clear_selection()，
+##    这里只维护“当前选中目标”与它的高亮，不产生任何伤害、不触发任何攻击。
+## 2. 攻击：只由 attack_requested（ATK 按钮 / 攻击键）触发，作用于当前选中目标；
+##    没有选中目标时攻击不会自动选目标，只空挥。
+## 3. 自动接近：只有“按攻击键且选中目标在攻击距离外”才开启；摇杆、技能、暂停、
+##    目标失效都会立刻关闭，且不会自行恢复。
 ##
-## 候选范围规则：可见安全矩形 = 视口矩形向内收缩 lock_screen_margin 像素，
-## 世界坐标由相机 canvas_transform 反投影得到；该矩形每帧现算，相机滚动/缩放/窗口变化即时生效。
+## 候选范围：目标脚底落在“视口矩形向内收缩 lock_screen_margin”的区域（每帧实时计算）。
 
 const HURT_INVULN := 0.3
 const RESPAWN_DELAY := 2.0
 const RESPAWN_INVULN := 1.0
+## 摇杆幅值超过该值即视为玩家主动操作，会打断自动接近。
+const STICK_CANCEL_THRESHOLD := 0.2
+## 非战斗交互（交互/采摘/观察）的飘字颜色。
+const INTERACT_COLOR := Color(0.62, 0.9, 1.0)
 
 ## 自动接近：路径重算与卡住判定参数
 const APPROACH_PATH_INTERVAL := 0.3
@@ -45,10 +47,13 @@ var lock_release_margin := 0.0
 var auto_approach := true
 var approach_stop_ratio := 0.85
 
-var select_deadzone := 0.45
-var select_max_angle_deg := 75.0
-var select_sector_deg := 35.0
-var select_cooldown := 0.18
+## 持续攻击：长按秒数 / 连点次数（可在“设置 → 玩家战斗”里改，运行时实时生效）。
+var auto_attack_hold_seconds := 0.8
+var auto_attack_tap_count := 5
+## 连点计数的滚动窗口（设计值，不进设置面板）。
+var auto_attack_tap_window := 1.0
+## 仇恨接管锁的保持时间：这段时间内该怪不再攻击就释放锁。
+var aggro_latch_timeout := 4.0
 
 var _health: HealthComponent
 var _visual: Node2D
@@ -59,6 +64,8 @@ var _cooldown_left := 0.0
 var _invuln_left := 0.0
 var _respawn_left := 0.0
 var _dead := false
+
+## 当前选中的目标（等价于旧版本的“锁定目标”）。
 var _locked: EnemyController = null
 
 var _path: Array[Vector2i] = []
@@ -69,11 +76,20 @@ var _approach_stalled := false
 var _approach_time := 0.0
 var _approach_best := INF
 
-var _selecting := false
-var _preview: EnemyController = null
-var _select_direction := Vector2.ZERO
-var _select_neutral := true
-var _select_cooldown_left := 0.0
+## 自动接近开关：只有「按攻击键且目标在攻击距离外」才会打开；
+## 摇杆、技能键、暂停、目标失效或切换都会立刻关闭。
+var _approach_enabled := false
+
+## ---- 持续攻击状态 ----
+var _auto_attack := false
+var _hold_time := 0.0
+var _ui_attack_held := false
+var _tap_times: Array[float] = []
+var _clock := 0.0
+
+## ---- 仇恨接管：第一只攻击玩家的怪 ----
+var _aggro_latch: EnemyController = null
+var _aggro_latch_left := 0.0
 
 
 func _ready() -> void:
@@ -88,18 +104,24 @@ func _ready() -> void:
 	_health.died.connect(_on_died)
 	_health.hp_changed.connect(_on_hp_changed)
 	EventBus.attack_requested.connect(_on_attack_requested)
-	EventBus.target_select_pressed.connect(_on_target_select_pressed)
-	EventBus.target_select_released.connect(_on_target_select_released)
+	EventBus.attack_pressed.connect(_on_attack_pressed)
+	EventBus.skill_requested.connect(_on_skill_requested)
+	EventBus.game_paused.connect(_on_game_paused)
+	GameSettings.combat_changed.connect(_apply_combat_settings)
+	_apply_combat_settings()
 
 
 func _exit_tree() -> void:
 	if EventBus.attack_requested.is_connected(_on_attack_requested):
 		EventBus.attack_requested.disconnect(_on_attack_requested)
-	if EventBus.target_select_pressed.is_connected(_on_target_select_pressed):
-		EventBus.target_select_pressed.disconnect(_on_target_select_pressed)
-	if EventBus.target_select_released.is_connected(_on_target_select_released):
-		EventBus.target_select_released.disconnect(_on_target_select_released)
-	_cancel_selection()
+	if EventBus.attack_pressed.is_connected(_on_attack_pressed):
+		EventBus.attack_pressed.disconnect(_on_attack_pressed)
+	if GameSettings.combat_changed.is_connected(_apply_combat_settings):
+		GameSettings.combat_changed.disconnect(_apply_combat_settings)
+	if EventBus.skill_requested.is_connected(_on_skill_requested):
+		EventBus.skill_requested.disconnect(_on_skill_requested)
+	if EventBus.game_paused.is_connected(_on_game_paused):
+		EventBus.game_paused.disconnect(_on_game_paused)
 	_set_locked_target(null)
 
 
@@ -135,12 +157,12 @@ func heal_to_full() -> void:
 
 # ---------------- 可见范围 ----------------
 
-## 锁定候选判定用的屏幕矩形（像素）：视口内部收缩 lock_screen_margin。
+## 候选判定用的屏幕矩形（像素）：视口内部收缩 lock_screen_margin。
 func get_lock_screen_rect() -> Rect2:
 	return Rect2(Vector2.ZERO, get_viewport_rect().size).grow(-lock_screen_margin)
 
 
-## 同一矩形反投影到世界坐标，便于调试与测试摆位。
+## 同一矩形反投影到世界坐标，便于调试、测试摆位与点击拾取。
 func get_lock_view_rect() -> Rect2:
 	var inverse := get_viewport().get_canvas_transform().affine_inverse()
 	var top_left := inverse * Vector2.ZERO
@@ -154,23 +176,40 @@ func is_position_locked_view(world_position: Vector2, margin: float) -> bool:
 	return Rect2(Vector2.ZERO, get_viewport_rect().size).grow(-margin).has_point(screen)
 
 
-# ---------------- 锁定目标 ----------------
+# ---------------- 选中目标 ----------------
 
-func get_locked_target() -> EnemyController:
+## 当前选中的目标（无效时返回 null）。
+func get_selected_target() -> EnemyController:
 	if _has_valid_lock():
 		return _locked
 	return null
 
 
-func get_preview_target() -> EnemyController:
-	return _preview if is_instance_valid(_preview) else null
+## 旧名保留，便于既有调用点与工具脚本平滑迁移。
+func get_locked_target() -> EnemyController:
+	return get_selected_target()
 
 
-func is_selecting() -> bool:
-	return _selecting
+## 点击/点触选中：只改选中状态与高亮，绝不触发攻击。
+## 目标必须存活且脚底在当前可见安全矩形内，否则返回 false。
+## from_aggro=true 表示由“被攻击接管”驱动，此时不清除仇恨锁。
+func select_target(enemy: EnemyController, from_aggro := false) -> bool:
+	if _dead or not is_instance_valid(enemy) or not enemy.is_alive():
+		return false
+	if not is_position_locked_view(enemy.global_position, lock_screen_margin):
+		return false
+	if not from_aggro:
+		clear_aggro_latch()
+	_set_locked_target(enemy)
+	return true
 
 
-## 当前屏幕内所有可攻击目标，按距离由近到远。
+## 点击空白处 / 取消选中。
+func clear_selection() -> void:
+	_set_locked_target(null)
+
+
+## 当前屏幕内所有可点选的目标，按距离由近到远。
 func lock_targets() -> Array:
 	var candidates: Array = []
 	for node: Node in get_tree().get_nodes_in_group("enemies"):
@@ -192,30 +231,23 @@ func has_lock_targets() -> bool:
 	return not lock_targets().is_empty()
 
 
-## 顺序切换（脚本/测试用的程序接口；UI 走“按住 + 甩动”流程）。
-func cycle_lock_target(targets: Array = []) -> bool:
-	var candidates: Array = targets if not targets.is_empty() else lock_targets()
-	if candidates.is_empty():
-		_set_locked_target(null)
-		return false
-	var index := candidates.find(_locked)
-	var next: EnemyController = candidates[0] if index < 0 else candidates[(index + 1) % candidates.size()]
-	_set_locked_target(next)
-	return true
+## 主操作按钮的文案 key：由“选中目标的类型”决定（怪物=攻击 / NPC=交互 / 植物=采摘 / 玩家=观察）。
+## 没有选中目标时回退到攻击，新增类型只需要改 data/targets/interactions.json。
+func get_selected_action_key() -> String:
+	var kind := "monster"
+	if _has_valid_lock() and _locked.has_method("get_target_kind"):
+		kind = _locked.get_target_kind()
+	return DataRegistry.get_interaction_action(kind)
 
 
-## 供 HUD 展示锁定/选择状态。
+## 供 HUD 展示选中状态。
 func get_lock_summary() -> Dictionary:
 	var candidates := lock_targets()
-	var target := get_locked_target()
-	var preview := get_preview_target()
+	var target := get_selected_target()
 	return {
 		"count": candidates.size(),
 		"index": candidates.find(_locked) + 1 if target != null else 0,
 		"name": _display_name_of(target),
-		"selecting": _selecting,
-		"preview_index": candidates.find(_preview) + 1 if preview != null else 0,
-		"preview_name": _display_name_of(preview),
 	}
 
 
@@ -227,22 +259,48 @@ func face_direction(direction: Vector2) -> void:
 		_visual.set_facing(_facing)
 
 
-## 挥击一次：返回命中数（0 或 1，锁定机制下每次只结算当前目标）。
-## 选择目标期间（按住目标按钮）不响应任何攻击请求，保证按目标按钮绝不会打出伤害。
-func try_attack() -> int:
-	if _dead or _cooldown_left > 0.0 or _selecting:
+## 主操作（ATK 按钮 / 攻击键）：统一入口，按“选中目标的类型”分发。
+## - 目标超距：先自动接近（不消耗冷却，也不产生动作）
+## - 归类为 action.attack（怪物，或未知类型回退）：走战斗结算
+## - 其它类型（NPC/植物/玩家）：只广播 target_action_requested 并飘字，绝不造成伤害
+## 返回 0 = 未执行，1 = 已执行。
+func perform_action() -> int:
+	if _dead:
 		return 0
-	_cooldown_left = attack_cooldown
 
 	if not _has_valid_lock():
-		_set_locked_target(_nearest_target())
-	if not _has_valid_lock():
+		_set_locked_target(null)
 		return 0
 
 	var target := _locked
 	if global_position.distance_to(target.global_position) > attack_range:
+		# 目标在攻击距离外：这次按键表示“走过去”，开启自动接近、不消耗冷却。
+		_approach_enabled = true
+		_reset_approach_state()
 		return 0
 
+	if _cooldown_left > 0.0:
+		return 0
+
+	_cooldown_left = attack_cooldown
+	var kind := "monster"
+	if target.has_method("get_target_kind"):
+		kind = target.get_target_kind()
+	var action_key := DataRegistry.get_interaction_action(kind)
+	if action_key == "action.attack":
+		return _resolve_attack(target)
+
+	EventBus.target_action_requested.emit(kind, target)
+	CombatFx.show_text(target.global_position, Locale.t(action_key), INTERACT_COLOR)
+	return 1
+
+
+## 兼容旧调用名（测试与工具脚本使用）。
+func try_attack() -> int:
+	return perform_action()
+
+
+func _resolve_attack(target: EnemyController) -> int:
 	var result := CombatMath.compute_damage(attack, 1.0, target.defense, crit_rate, crit_damage, _rng)
 	var damage := int(result["damage"])
 	if not target.take_damage(damage, self):
@@ -251,7 +309,11 @@ func try_attack() -> int:
 	return 1
 
 
-func take_damage(amount: int, _source: Node = null) -> void:
+func take_damage(amount: int, source: Node = null) -> void:
+	# 先记录“谁在攻击我”，再判断能不能真正扣血：
+	# 复活无敌帧、受击保护期内攻击虽然不生效，但目标接管必须照常进行，
+	# 否则复活后立刻挨打时会没有选中目标。
+	_latch_attacker(source)
 	if _dead or _invuln_left > 0.0:
 		return
 	var applied := _health.take_damage(amount)
@@ -264,6 +326,7 @@ func take_damage(amount: int, _source: Node = null) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	_clock += delta
 	_cooldown_left = maxf(0.0, _cooldown_left - delta)
 	_invuln_left = maxf(0.0, _invuln_left - delta)
 
@@ -275,28 +338,21 @@ func _physics_process(delta: float) -> void:
 		return
 
 	_drop_invalid_lock()
-
-	# 选择模式下摇杆归选择流程，角色停下，不参与移动与自动接近。
-	if _selecting:
-		_tick_selection(delta)
-		velocity = velocity.move_toward(Vector2.ZERO, deceleration * delta)
-		move_and_slide()
-		var focus := get_preview_target()
-		_turn_towards(focus.global_position if focus != null else _facing_point(), delta)
-		return
+	_tick_aggro_latch(delta)
 
 	var direction: Vector2 = InputManager.move_vector
 	if direction.length() > 1.0:
 		direction = direction.normalized()
 
-	if direction.length() > 0.05:
-		# 玩家主动操作优先：重置自动接近状态，让位给手动移动。
-		_reset_approach_state()
+	if direction.length() > STICK_CANCEL_THRESHOLD:
+		# 摇杆一动就打断自动接近与持续攻击，松手后不会自己恢复。
+		cancel_auto_approach()
+		cancel_auto_attack()
 	elif _should_auto_approach():
 		direction = _approach_direction(delta)
 		_update_approach_progress(delta)
 
-	# 有锁定时朝向始终平滑跟随目标，攻击指向与锁定状态保持一致。
+	# 有选中目标时朝向始终平滑跟随，攻击指向与选中状态保持一致。
 	if _has_valid_lock():
 		_turn_towards(_locked.global_position, delta)
 	elif direction.length() > 0.01:
@@ -307,116 +363,145 @@ func _physics_process(delta: float) -> void:
 	velocity = velocity.move_toward(target_speed, rate * delta)
 	move_and_slide()
 
+	# 移动输入已在上面取消持续攻击，这里只处理“触发/维持”。
+	_tick_auto_attack(delta)
 
-# ---------------- 目标选择（按住 + 甩动摇杆） ----------------
 
-## 按住目标按钮：进入选择模式。返回是否找到可预览的目标。
-func begin_target_selection() -> bool:
+# ---------------- 持续攻击 ----------------
+
+## 持续攻击是否处于激活状态。
+func is_auto_attack_active() -> bool:
+	return _auto_attack
+
+
+## 触发阈值说明：按住主操作 ≥ auto_attack_hold_seconds，或在 auto_attack_tap_window 内
+## 连点 ≥ auto_attack_tap_count 次。两个阈值都可在“设置 → 玩家战斗”里调整。
+func _tick_auto_attack(delta: float) -> void:
+	var holding := Input.is_action_pressed("attack") or _ui_attack_held
+	if holding:
+		_hold_time += delta
+		if not _auto_attack and auto_attack_hold_seconds > 0.0 and _hold_time >= auto_attack_hold_seconds:
+			_start_auto_attack()
+	else:
+		_hold_time = 0.0
+
+	if not _auto_attack:
+		return
+	# 目标失效（死亡/离开屏幕/被清空）自动结束
+	if not _has_valid_lock():
+		cancel_auto_attack()
+		return
+	perform_action()
+
+
+func _start_auto_attack() -> void:
+	if _auto_attack or _dead:
+		return
+	if not _has_valid_lock():
+		return
+	_auto_attack = true
+	_tap_times.clear()
+	EventBus.auto_attack_changed.emit(true)
+
+
+## 主动中断持续攻击（移动 / 点空白 / 点其他目标 / 技能 / 暂停 / 目标失效都会调用）。
+func cancel_auto_attack() -> void:
+	_hold_time = 0.0
+	_tap_times.clear()
+	if not _auto_attack:
+		return
+	_auto_attack = false
+	EventBus.auto_attack_changed.emit(false)
+
+
+func _register_tap() -> void:
+	_tap_times.append(_clock)
+	while not _tap_times.is_empty() and _clock - _tap_times[0] > auto_attack_tap_window:
+		_tap_times.pop_front()
+	if not _auto_attack and auto_attack_tap_count > 0 and _tap_times.size() >= auto_attack_tap_count:
+		_start_auto_attack()
+
+
+# ---------------- 仇恨接管 ----------------
+
+## 目标切换优先级（自上而下）：
+## 1. 玩家手动点选：立即生效，并清空仇恨锁（下一次被攻击会重新建立锁）。
+## 2. 首只攻击者优先：已有有效仇恨锁时，后续怪物的攻击不会切换目标。
+## 3. 锁失效（死亡 / 离开视口 / 超过 aggro_latch_timeout 未再攻击玩家）后，
+##    下一只攻击玩家的怪重新成为锁并接管目标。
+func _latch_attacker(source: Node) -> void:
+	# 死亡期间不接管目标（复活时会统一清空锁，复活后的下一次攻击重新建立）。
 	if _dead:
+		return
+	if not (source is EnemyController):
+		return
+	var enemy := source as EnemyController
+	if not enemy.is_alive():
+		return
+	if _has_active_latch():
+		# 已有首攻怪：只有它自己再攻击才续期，其它怪的攻击不改变目标。
+		if _aggro_latch == enemy:
+			_aggro_latch_left = aggro_latch_timeout
+		return
+	_aggro_latch = enemy
+	_aggro_latch_left = aggro_latch_timeout
+	select_target(enemy, true)
+
+
+func _has_active_latch() -> bool:
+	if _aggro_latch == null or _aggro_latch_left <= 0.0:
 		return false
-	var candidates := lock_targets()
-	if candidates.is_empty():
-		# 没有可切换目标时不进入选择模式，当前选择与攻击行为都不受影响。
-		_cancel_selection()
+	if not is_instance_valid(_aggro_latch) or not _aggro_latch.is_alive():
 		return false
-	_selecting = true
-	_select_neutral = true
-	_select_cooldown_left = 0.0
-	_reset_approach_state()
-	var initial: EnemyController = _locked if candidates.has(_locked) else candidates[0]
-	_set_preview(initial)
-	return true
+	return is_position_locked_view(_aggro_latch.global_position, lock_release_margin)
 
 
-## 松开目标按钮：确认预览目标。无可切换目标时保持原选择不变。
-func end_target_selection() -> void:
-	if not _selecting:
+func _tick_aggro_latch(delta: float) -> void:
+	if _aggro_latch == null:
 		return
-	_selecting = false
-	var confirmed := _preview
-	_clear_preview()
-	if is_instance_valid(confirmed) and confirmed.is_alive() and _is_candidate(confirmed):
-		_set_locked_target(confirmed)
+	# 允许运行时调小超时（设置/测试），立即按新上限收缩剩余时间。
+	_aggro_latch_left = minf(_aggro_latch_left, aggro_latch_timeout)
+	_aggro_latch_left = maxf(0.0, _aggro_latch_left - delta)
+	if _aggro_latch_left <= 0.0 or not _has_active_latch():
+		_aggro_latch = null
+		_aggro_latch_left = 0.0
 
 
-func _tick_selection(delta: float) -> void:
-	_select_cooldown_left = maxf(0.0, _select_cooldown_left - delta)
-
-	# 预览目标失效（死亡/离开屏幕）时清掉预览，避免指向无效对象。
-	if _preview != null and not _is_candidate(_preview):
-		_clear_preview()
-
-	var direction: Vector2 = InputManager.move_vector
-	if direction.length() < select_deadzone:
-		_select_neutral = true
-		return
-	if _select_cooldown_left > 0.0:
-		return
-	if not _select_neutral and absf(_select_direction.angle_to(direction)) < deg_to_rad(select_sector_deg):
-		# 同一方向持续按住不重复切换，避免目标一路乱跳。
-		return
-
-	_select_neutral = false
-	_select_direction = direction.normalized()
-	_select_cooldown_left = select_cooldown
-	var next := _pick_candidate_in_direction(_select_direction)
-	if next != null and next != _preview:
-		_set_preview(next)
+## 玩家手动选目标时调用：释放仇恨锁，玩家意志优先。
+func clear_aggro_latch() -> void:
+	_aggro_latch = null
+	_aggro_latch_left = 0.0
 
 
-## 取与甩动方向夹角最小的候选；都超出角度窗口时返回 null（保持当前选择）。
-func _pick_candidate_in_direction(direction: Vector2) -> EnemyController:
-	var candidates := lock_targets()
-	if candidates.is_empty():
-		return null
-	var best: EnemyController = null
-	var best_dot := cos(deg_to_rad(select_max_angle_deg))
-	for enemy: EnemyController in candidates:
-		var offset := enemy.global_position - global_position
-		if offset.length() < 0.01:
-			continue
-		var dot := offset.normalized().dot(direction)
-		if dot > best_dot:
-			best = enemy
-			best_dot = dot
-	return best
-
-
-func _is_candidate(enemy: EnemyController) -> bool:
-	if not is_instance_valid(enemy) or not enemy.is_alive():
-		return false
-	return is_position_locked_view(enemy.global_position, lock_screen_margin)
-
-
-func _set_preview(enemy: EnemyController) -> void:
-	if _preview == enemy:
-		return
-	if is_instance_valid(_preview) and _preview.has_method("set_preview"):
-		_preview.set_preview(false)
-	_preview = enemy
-	if is_instance_valid(_preview) and _preview.has_method("set_preview"):
-		_preview.set_preview(true)
-
-
-func _clear_preview() -> void:
-	_set_preview(null)
-
-
-func _cancel_selection() -> void:
-	_selecting = false
-	_clear_preview()
-
-
-func _facing_point() -> Vector2:
-	return global_position + _facing * 32.0
+func get_aggro_latch() -> EnemyController:
+	return _aggro_latch if _aggro_latch_left > 0.0 else null
 
 
 # ---------------- 自动接近 ----------------
 
 func _should_auto_approach() -> bool:
-	if not auto_approach or _approach_stalled or not _has_valid_lock():
+	if not auto_approach or _approach_stalled or not _approach_enabled:
+		return false
+	if not _has_valid_lock():
 		return false
 	return global_position.distance_to(_locked.global_position) > attack_range * approach_stop_ratio
+
+
+## 当前是否正在自动接近（HUD / 测试用）。
+func is_auto_approaching() -> bool:
+	return _should_auto_approach()
+
+
+## 自动接近是否处于“已开启”状态（即使当前已在攻击距离内、暂时不需要移动）。
+func is_approach_enabled() -> bool:
+	return _approach_enabled
+
+
+## 关闭自动接近并清空路径：任何玩家主动操作都会调用它，关闭后不会自行恢复。
+func cancel_auto_approach() -> void:
+	_approach_enabled = false
+	_reset_approach_state()
+	_reset_approach_path()
 
 
 func _approach_direction(delta: float) -> Vector2:
@@ -481,16 +566,11 @@ func _turn_towards(point: Vector2, delta: float) -> void:
 		_visual.set_facing(_facing)
 
 
-func _nearest_target() -> EnemyController:
-	var candidates := lock_targets()
-	return candidates[0] if not candidates.is_empty() else null
-
-
 func _has_valid_lock() -> bool:
 	return is_instance_valid(_locked) and _locked.is_alive()
 
 
-## 解锁条件：目标死亡，或目标离开视口边界（用更宽松的释放边距，避免贴边抖动）。
+## 取消选中条件：目标死亡，或目标移出视口（用更宽松的释放边距，避免贴边抖动）。
 func _drop_invalid_lock() -> void:
 	if _locked == null:
 		return
@@ -501,7 +581,10 @@ func _drop_invalid_lock() -> void:
 		_set_locked_target(null)
 
 
+## 设置选中目标（只处理状态与高亮，不涉及任何攻击逻辑）。
 func _set_locked_target(enemy: EnemyController) -> void:
+	if _locked != enemy:
+		cancel_auto_approach()
 	if _locked == enemy:
 		return
 	if is_instance_valid(_locked) and _locked.has_method("set_locked"):
@@ -516,9 +599,14 @@ func _set_locked_target(enemy: EnemyController) -> void:
 func _display_name_of(enemy: EnemyController) -> String:
 	if not is_instance_valid(enemy):
 		return "-"
-	if not enemy.def.is_empty():
-		return String(enemy.def.get("display_name", enemy.enemy_id))
-	return enemy.enemy_id
+	if enemy.def.is_empty():
+		return enemy.enemy_id
+	# 怪物名优先跟随语言表，没有条目时回退到配置里的 display_name。
+	var id := String(enemy.def.get("id", enemy.enemy_id))
+	var key := "enemy." + id
+	if not id.is_empty() and Locale.has_key(key):
+		return Locale.t(key)
+	return String(enemy.def.get("display_name", enemy.enemy_id))
 
 
 func _apply_def() -> void:
@@ -536,22 +624,41 @@ func _apply_def() -> void:
 	lock_release_margin = float(def.get("lock_release_margin", lock_release_margin))
 	auto_approach = bool(def.get("auto_approach", auto_approach))
 	approach_stop_ratio = float(def.get("approach_stop_ratio", approach_stop_ratio))
-	select_deadzone = float(def.get("select_deadzone", select_deadzone))
-	select_max_angle_deg = float(def.get("select_max_angle_deg", select_max_angle_deg))
-	select_sector_deg = float(def.get("select_sector_deg", select_sector_deg))
-	select_cooldown = float(def.get("select_cooldown", select_cooldown))
+	# 持续攻击与仇恨锁的设计默认值（用户可在设置里覆盖前两项）。
+	auto_attack_hold_seconds = float(def.get("auto_attack_hold_seconds", auto_attack_hold_seconds))
+	auto_attack_tap_count = int(def.get("auto_attack_tap_count", auto_attack_tap_count))
+	auto_attack_tap_window = float(def.get("auto_attack_tap_window", auto_attack_tap_window))
+	aggro_latch_timeout = float(def.get("aggro_latch_timeout", aggro_latch_timeout))
 
 
+## 用户在“设置 → 玩家战斗”里改的阈值实时生效。
+func _apply_combat_settings() -> void:
+	auto_attack_hold_seconds = GameSettings.combat_value("auto_attack_hold_seconds", auto_attack_hold_seconds)
+	auto_attack_tap_count = int(GameSettings.combat_value("auto_attack_tap_count", float(auto_attack_tap_count)))
+
+
+## 主操作按钮是自动接近的唯一开启来源：目标在距离外 -> 走过去；在距离内 -> 执行动作。
 func _on_attack_requested() -> void:
-	try_attack()
+	_ui_attack_held = false
+	_register_tap()
+	perform_action()
 
 
-func _on_target_select_pressed() -> void:
-	begin_target_selection()
+func _on_attack_pressed() -> void:
+	_ui_attack_held = true
 
 
-func _on_target_select_released() -> void:
-	end_target_selection()
+func _on_skill_requested(_skill_id: String) -> void:
+	# 技能按钮（后续接入）同样打断自动接近与持续攻击。
+	cancel_auto_approach()
+	cancel_auto_attack()
+
+
+func _on_game_paused(is_paused: bool) -> void:
+	# 打开设置面板/暂停时立刻结束寻路与持续攻击，避免恢复后角色继续行动。
+	if is_paused:
+		cancel_auto_approach()
+		cancel_auto_attack()
 
 
 func _on_hp_changed(current: int, maximum: int) -> void:
@@ -559,11 +666,15 @@ func _on_hp_changed(current: int, maximum: int) -> void:
 		_visual.set_health(current, maximum)
 
 
+## 死亡：立即停手、清空选中与仇恨锁、取消碰撞，2 秒后自动复活。
 func _on_died() -> void:
 	_dead = true
 	_respawn_left = RESPAWN_DELAY
 	velocity = Vector2.ZERO
-	_cancel_selection()
+	_ui_attack_held = false
+	cancel_auto_attack()
+	cancel_auto_approach()
+	clear_aggro_latch()
 	_set_locked_target(null)
 	set_deferred("collision_layer", 0)
 	set_deferred("collision_mask", 0)
@@ -572,11 +683,26 @@ func _on_died() -> void:
 	EventBus.player_died.emit()
 
 
+## 复活（触发条件：`HealthComponent.died` 后经过 RESPAWN_DELAY 秒）。
+## 状态重置清单（顺序重要：先恢复存活标记，再清理战斗状态）：
+## 1. 位置回到出生点、满血、无敌 RESPAWN_INVULN 秒；
+## 2. 清空选中目标与仇恨锁——复活后的第一次被攻击可以重新接管目标；
+## 3. 取消持续攻击 / 自动接近，并清掉按钮按住状态与攻击冷却；
+## 4. 恢复碰撞层，恢复视觉。
 func _respawn() -> void:
 	global_position = spawn_point
+	velocity = Vector2.ZERO
 	_health.reset_full()
 	_dead = false
 	_invuln_left = RESPAWN_INVULN
+	_cooldown_left = 0.0
+	_ui_attack_held = false
+	_hold_time = 0.0
+	_tap_times.clear()
+	cancel_auto_attack()
+	cancel_auto_approach()
+	clear_aggro_latch()
+	_set_locked_target(null)
 	set_deferred("collision_layer", PhysLayers.PLAYER)
 	set_deferred("collision_mask", PhysLayers.WORLD | PhysLayers.ENEMY)
 	if _visual != null and _visual.has_method("set_dead"):

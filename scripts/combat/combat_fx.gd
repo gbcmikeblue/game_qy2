@@ -19,6 +19,11 @@ static func show_hurt(world_position: Vector2, amount: int) -> void:
 	_spawn(str(amount), HURT_COLOR, world_position)
 
 
+## 通用文本飘字：非战斗交互（交互/采摘/观察）用它给即时反馈。
+static func show_text(world_position: Vector2, text: String, color: Color = HIT_COLOR) -> void:
+	_spawn(text, color, world_position)
+
+
 static func _spawn(text: String, color: Color, world_position: Vector2) -> void:
 	if layer == null or not is_instance_valid(layer):
 		return

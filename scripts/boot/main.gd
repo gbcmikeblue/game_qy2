@@ -6,6 +6,7 @@ extends Node2D
 const MAP_SCENE := preload("res://scenes/maps/test_map.tscn")
 const PLAYER_SCENE := preload("res://scenes/actors/player/player.tscn")
 const HUD_SCENE := preload("res://scenes/ui/hud.tscn")
+const TARGET_PICKER := preload("res://scripts/input/target_picker.gd")
 
 var map
 var player
@@ -28,6 +29,11 @@ func _ready() -> void:
 	GameManager.player = player
 
 	_apply_camera_limits()
+	# 世界点击拾取：选中只改选中状态，攻击由 ATK 按钮/攻击键单独触发。
+	var picker := Node.new()
+	picker.name = "TargetPicker"
+	picker.set_script(TARGET_PICKER)
+	add_child(picker)
 	add_child(HUD_SCENE.instantiate())
 
 

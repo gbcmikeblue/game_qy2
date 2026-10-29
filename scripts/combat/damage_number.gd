@@ -5,7 +5,7 @@ extends Node2D
 
 const DURATION := 0.8
 const RISE_SPEED := 34.0
-const FONT_SIZE := 16
+const FONT_SIZE := 18
 
 var _text := ""
 var _color := Color.WHITE
@@ -29,6 +29,6 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	if _text.is_empty():
 		return
-	var font := ThemeDB.fallback_font
+	var font := Locale.font
 	var width := font.get_string_size(_text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x
 	draw_string(font, Vector2(-width * 0.5, 0.0), _text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, _color)

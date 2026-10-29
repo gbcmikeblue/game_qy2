@@ -1,7 +1,8 @@
-{
+﻿{
   "enemies": [
     {
       "id": "forest_wolf",
+      "kind": "monster",
       "display_name": "FOREST WOLF",
       "max_hp": 45,
       "attack": 14,
@@ -18,6 +19,7 @@
     },
     {
       "id": "stone_boar",
+      "kind": "monster",
       "display_name": "STONE BOAR",
       "max_hp": 90,
       "attack": 20,
@@ -34,6 +36,7 @@
     },
     {
       "id": "cave_bat",
+      "kind": "monster",
       "display_name": "CAVE BAT",
       "max_hp": 32,
       "attack": 16,

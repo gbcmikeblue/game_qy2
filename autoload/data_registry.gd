@@ -5,14 +5,19 @@ extends Node
 
 const ENEMY_DEF_PATH := "res://data/actors/enemies.json"
 const PLAYER_DEF_PATH := "res://data/actors/player.json"
+const INTERACTION_PATH := "res://data/targets/interactions.json"
 
 var enemies: Dictionary = {}
 var player_def: Dictionary = {}
+## 目标类型 -> 主操作按钮文案（i18n key）；新增交互对象只改 JSON。
+var interactions: Dictionary = {}
+var interaction_fallback := "monster"
 
 
 func _ready() -> void:
 	_load_enemy_defs()
 	_load_player_def()
+	_load_interactions()
 
 
 func get_enemy_def(id: String) -> Dictionary:
@@ -21,6 +26,22 @@ func get_enemy_def(id: String) -> Dictionary:
 
 func get_player_def() -> Dictionary:
 	return player_def
+
+
+## 目标类型对应的按钮文案 i18n key（未知类型回退到 fallback）。
+func get_interaction_action(kind: String) -> String:
+	var entry: Dictionary = interactions.get(kind, {})
+	if entry.is_empty():
+		entry = interactions.get(interaction_fallback, {})
+	return String(entry.get("action_key", "action.attack"))
+
+
+func has_interaction_kind(kind: String) -> bool:
+	return interactions.has(kind)
+
+
+func get_interaction_kinds() -> Array:
+	return interactions.keys()
 
 
 func _load_enemy_defs() -> void:
@@ -43,6 +64,19 @@ func _load_player_def() -> void:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return
 	player_def = (parsed as Dictionary).get("player", {})
+
+
+func _load_interactions() -> void:
+	var parsed: Variant = _read_json(INTERACTION_PATH)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return
+	var data := parsed as Dictionary
+	interaction_fallback = String(data.get("fallback", "monster"))
+	var kinds: Variant = data.get("kinds", {})
+	if typeof(kinds) == TYPE_DICTIONARY:
+		interactions = kinds as Dictionary
+	if interactions.is_empty():
+		push_error("交互配置为空：%s" % INTERACTION_PATH)
 
 
 func _read_json(path: String) -> Variant:

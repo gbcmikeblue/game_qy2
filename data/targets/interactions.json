@@ -1,0 +1,10 @@
+{
+  "_comment": "目标类型 -> 主操作按钮文案（i18n key）。新增交互对象只需在这里加一条，并让对象实现 get_target_kind()。",
+  "kinds": {
+    "monster": { "action_key": "action.attack" },
+    "npc": { "action_key": "action.interact" },
+    "plant": { "action_key": "action.harvest" },
+    "player": { "action_key": "action.observe" }
+  },
+  "fallback": "monster"
+}

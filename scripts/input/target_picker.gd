@@ -1,0 +1,78 @@
+extends Node
+
+## 点击/点触选中目标：点敌人只做“选中”，点空白取消选中。
+##
+## 与攻击完全分离：这里只调用玩家的 select_target()/clear_selection()，
+## 不发送任何攻击事件；攻击只能由 ATK 按钮或攻击键触发。
+##
+## 事件来源：走 _unhandled_input，UI（摇杆/按钮/设置面板）会把事件吃掉，
+## 所以在 UI 上点按不会误触发选中。
+
+## 命中判定框（相对敌人脚底）：覆盖躯干、血条与名字，手指点击不用太精准。
+const HIT_BOX := Rect2(Vector2(-26.0, -72.0), Vector2(52.0, 88.0))
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if GameManager.is_paused:
+		return
+
+	var screen_position := Vector2.ZERO
+	var is_release := false
+	if event is InputEventScreenTouch:
+		var touch := event as InputEventScreenTouch
+		if touch.pressed:
+			return
+		screen_position = touch.position
+		is_release = true
+	elif event is InputEventMouseButton:
+		var mouse := event as InputEventMouseButton
+		if mouse.button_index != MOUSE_BUTTON_LEFT or mouse.pressed:
+			return
+		screen_position = mouse.position
+		is_release = true
+
+	if not is_release:
+		return
+
+	pick_at_screen(screen_position)
+	get_viewport().set_input_as_handled()
+
+
+## 屏幕坐标 -> 选中/取消选中。返回是否发生了选中变化，便于测试与调试复用。
+func pick_at_screen(screen_position: Vector2) -> bool:
+	var player = GameManager.player
+	if not is_instance_valid(player) or not player.is_alive():
+		return false
+
+	var before = player.get_selected_target()
+	var world_position := _screen_to_world(screen_position)
+	var enemy = _enemy_at(player, world_position)
+	var selected := false
+	if is_instance_valid(enemy):
+		selected = player.select_target(enemy)
+	else:
+		player.clear_selection()
+
+	# 点击空白或点到别的目标 -> 中断持续攻击（点同一个目标不算主动中断）。
+	if player.get_selected_target() != before:
+		player.cancel_auto_attack()
+	return selected
+
+
+func _screen_to_world(screen_position: Vector2) -> Vector2:
+	return get_viewport().get_canvas_transform().affine_inverse() * screen_position
+
+
+## 命中优先级：判定框内离点击点最近的敌人（同屏、存活由 lock_targets() 保证）。
+func _enemy_at(player, world_position: Vector2):
+	var best = null
+	var best_distance := INF
+	for enemy: Node in player.lock_targets():
+		var local: Vector2 = world_position - enemy.global_position
+		if not HIT_BOX.has_point(local):
+			continue
+		var distance: float = local.length()
+		if distance < best_distance:
+			best = enemy
+			best_distance = distance
+	return best

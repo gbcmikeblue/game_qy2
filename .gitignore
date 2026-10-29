@@ -22,3 +22,6 @@ Desktop.ini
 
 # 上述原始素材的 Godot 导入元数据
 /*.webp.import
+
+# 测试
+/mytest

@@ -18,6 +18,19 @@ var _flash_left := 0.0
 var _dead := false
 
 
+func _ready() -> void:
+	Locale.language_changed.connect(_on_language_changed)
+
+
+func _exit_tree() -> void:
+	if Locale.language_changed.is_connected(_on_language_changed):
+		Locale.language_changed.disconnect(_on_language_changed)
+
+
+func _on_language_changed(_code: String) -> void:
+	queue_redraw()
+
+
 func set_facing(direction: Vector2) -> void:
 	if direction.length() < 0.01:
 		return
@@ -76,10 +89,10 @@ func _draw_name_and_bar() -> void:
 	var bar_color := C_HP if ratio > 0.3 else C_HP_LOW
 	draw_rect(Rect2(-13.0, -69.0, 26.0 * ratio, 3.0), bar_color)
 
-	var font := ThemeDB.fallback_font
-	var text := "HERO"
-	var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
-	draw_string(font, Vector2(-width * 0.5, -75.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1.0, 1.0, 1.0, 0.92))
+	var font := Locale.font
+	var text := Locale.t("actor.hero")
+	var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+	draw_string(font, Vector2(-width * 0.5, -75.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1.0, 1.0, 1.0, 0.92))
 
 
 func _ellipse(center: Vector2, rx: float, ry: float) -> PackedVector2Array:

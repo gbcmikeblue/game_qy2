@@ -1,0 +1,8 @@
+Teko.ttf
+Source : Google Fonts (https://fonts.google.com/specimen/Teko)
+Method : downloaded via https://fonts.gstatic.com/s/teko/v23/... (static TTF instance)
+License: SIL Open Font License 1.1（全文见同目录 OFL.txt）
+
+发布注意：
+- 替换字体时请同步更新本文件与 OFL.txt；
+- 建议把字体 name 表里的版权行（Copyright ... with Reserved Font Name ...）一并保留在发行包内。

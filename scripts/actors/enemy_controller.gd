@@ -92,16 +92,15 @@ func get_state_name() -> String:
 	return String(State.keys()[state])
 
 
-## 由玩家控制器调用：被锁定时高亮，解除/死亡时取消高亮。
+## 目标类型（决定主操作按钮文案）：配置里没写就是怪物。
+func get_target_kind() -> String:
+	return String(def.get("kind", "monster"))
+
+
+## 由玩家控制器调用：被选中时高亮，取消选中/死亡时取消高亮。
 func set_locked(value: bool) -> void:
 	if _visual != null and _visual.has_method("set_locked"):
 		_visual.set_locked(value)
-
-
-## 选择模式下的“预览”高亮：按住目标按钮甩动摇杆时使用。
-func set_preview(value: bool) -> void:
-	if _visual != null and _visual.has_method("set_preview"):
-		_visual.set_preview(value)
 
 
 func take_damage(amount: int, _source: Node = null) -> bool:
@@ -345,7 +344,5 @@ func _on_died() -> void:
 		_visual.set_dead(true)
 	if _visual != null and _visual.has_method("set_locked"):
 		_visual.set_locked(false)
-	if _visual != null and _visual.has_method("set_preview"):
-		_visual.set_preview(false)
 	remove_from_group("enemies")
 	EventBus.enemy_died.emit(enemy_id)
