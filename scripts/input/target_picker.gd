@@ -11,6 +11,14 @@ extends Node
 ## 命中判定框（相对敌人脚底）：覆盖躯干、血条与名字，手指点击不用太精准。
 const HIT_BOX := Rect2(Vector2(-26.0, -72.0), Vector2(52.0, 88.0))
 
+## 世界层容器（WorldView）。世界在独立 SubViewport 内渲染后，
+## 屏幕坐标到世界坐标的映射只有它知道，因此由 main 注入。
+var world_view: Node = null
+
+
+func setup(view: Node) -> void:
+	world_view = view
+
 
 func _unhandled_input(event: InputEvent) -> void:
 	if GameManager.is_paused:
@@ -40,12 +48,16 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## 屏幕坐标 -> 选中/取消选中。返回是否发生了选中变化，便于测试与调试复用。
 func pick_at_screen(screen_position: Vector2) -> bool:
+	return pick_at_world(_screen_to_world(screen_position))
+
+
+## 世界坐标 -> 选中/取消选中（与屏幕口径解耦，测试与调试可直接调用）。
+func pick_at_world(world_position: Vector2) -> bool:
 	var player = GameManager.player
 	if not is_instance_valid(player) or not player.is_alive():
 		return false
 
 	var before = player.get_selected_target()
-	var world_position := _screen_to_world(screen_position)
 	var enemy = _enemy_at(player, world_position)
 	var selected := false
 	if is_instance_valid(enemy):
@@ -60,6 +72,9 @@ func pick_at_screen(screen_position: Vector2) -> bool:
 
 
 func _screen_to_world(screen_position: Vector2) -> Vector2:
+	if is_instance_valid(world_view) and world_view.has_method("screen_to_world"):
+		return world_view.screen_to_world(screen_position)
+	# 没有世界层容器时（例如单独跑拾取逻辑）退回根视口画布变换。
 	return get_viewport().get_canvas_transform().affine_inverse() * screen_position
 
 

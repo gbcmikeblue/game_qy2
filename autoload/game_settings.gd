@@ -7,10 +7,13 @@ extends Node
 signal bindings_changed
 ## 玩家战斗参数（持续攻击阈值）变化。
 signal combat_changed
+## 显示配置（分辨率档位 / 画质档 / UI 缩放 / 视野档）变化，由 DisplayAdapter 消费。
+signal display_changed
 
 const SAVE_PATH := "user://keybindings.cfg"
 const SECTION := "input"
 const COMBAT_SECTION := "combat"
+const DISPLAY_SECTION := "display"
 const ACTIONS := ["move_up", "move_down", "move_left", "move_right", "attack"]
 const DEFAULTS := {
 	"move_up": KEY_W,
@@ -27,13 +30,28 @@ const COMBAT_LIMITS := {
 	"auto_attack_tap_count": {"min": 2.0, "max": 10.0, "step": 1.0},
 }
 
+## 显示配置默认值。resolution_preset 的合法性由 DisplayAdapter 判定（单一来源）。
+const DISPLAY_DEFAULTS := {
+	"resolution_preset": "auto",
+	"quality_tier": "auto",
+	"ui_scale": 1.0,
+	"view_area_scale": 1.0,
+}
+const QUALITY_TIERS := ["auto", "low", "medium", "high"]
+## 界面缩放上限 1.2：再大时左下角血条会被推上去与调试信息重叠（HUD 720 逻辑高度装不下）。
+const UI_SCALES := [0.9, 1.0, 1.1, 1.2]
+const VIEW_SCALE_VALUES := [0.8, 1.0, 1.25]
+
 var bindings: Dictionary = {}
 ## 用户覆盖值（未设置时用 JSON 里的设计默认值）。
 var combat: Dictionary = {}
+## 显示配置；非法值在读取与写入时都会被吸附到最近的合法枚举。
+var display: Dictionary = {}
 
 
 func _ready() -> void:
 	reset_to_defaults_quietly()
+	display = DISPLAY_DEFAULTS.duplicate()
 	load_from_disk()
 	apply()
 
@@ -125,6 +143,80 @@ func reset_combat() -> void:
 	combat_changed.emit()
 
 
+func set_display_value(key: String, value: Variant) -> void:
+	if not DISPLAY_DEFAULTS.has(key):
+		return
+	var normalized: Variant = _normalize_display(key, value)
+	if display.get(key) == normalized:
+		return
+	display[key] = normalized
+	save_to_disk()
+	display_changed.emit()
+
+
+func display_value(key: String) -> Variant:
+	return display.get(key, DISPLAY_DEFAULTS.get(key))
+
+
+func display_preset() -> String:
+	return String(display_value("resolution_preset"))
+
+
+func display_quality() -> String:
+	var tier := String(display_value("quality_tier"))
+	return tier if QUALITY_TIERS.has(tier) else "auto"
+
+
+func display_ui_scale() -> float:
+	return float(display_value("ui_scale"))
+
+
+func display_view_scale() -> float:
+	return float(display_value("view_area_scale"))
+
+
+## UI 缩放按离散档位加减（面板 +/- 按钮用），不做无级缩放。
+func adjust_ui_scale(direction: int) -> void:
+	var current := display_ui_scale()
+	var index := 0
+	for i in UI_SCALES.size():
+		if is_equal_approx(float(UI_SCALES[i]), current):
+			index = i
+			break
+	index = clampi(index + direction, 0, UI_SCALES.size() - 1)
+	set_display_value("ui_scale", float(UI_SCALES[index]))
+
+
+func reset_display() -> void:
+	display = DISPLAY_DEFAULTS.duplicate()
+	save_to_disk()
+	display_changed.emit()
+
+
+## 非法值一律吸附到最近的合法枚举，避免手改配置把界面搞坏。
+func _normalize_display(key: String, value: Variant) -> Variant:
+	match key:
+		"resolution_preset":
+			var id := String(value).strip_edges()
+			return id if not id.is_empty() else String(DISPLAY_DEFAULTS[key])
+		"quality_tier":
+			var tier := String(value)
+			return tier if QUALITY_TIERS.has(tier) else "auto"
+		"ui_scale":
+			return _snap_to(float(value), UI_SCALES)
+		"view_area_scale":
+			return _snap_to(float(value), VIEW_SCALE_VALUES)
+	return DISPLAY_DEFAULTS[key]
+
+
+func _snap_to(value: float, values: Array) -> float:
+	var best := float(values[0])
+	for candidate: float in values:
+		if absf(candidate - value) < absf(best - value):
+			best = candidate
+	return best
+
+
 func save_to_disk() -> void:
 	var config := ConfigFile.new()
 	for action: String in ACTIONS:
@@ -132,6 +224,8 @@ func save_to_disk() -> void:
 	for key: String in COMBAT_KEYS:
 		if combat.has(key):
 			config.set_value(COMBAT_SECTION, key, float(combat[key]))
+	for key: String in DISPLAY_DEFAULTS:
+		config.set_value(DISPLAY_SECTION, key, display.get(key, DISPLAY_DEFAULTS[key]))
 	config.save(SAVE_PATH)
 
 
@@ -148,6 +242,10 @@ func load_from_disk() -> void:
 		var value: Variant = config.get_value(COMBAT_SECTION, key, -1.0)
 		if float(value) >= 0.0:
 			combat[key] = float(value)
+	for key: String in DISPLAY_DEFAULTS:
+		if not config.has_section_key(DISPLAY_SECTION, key):
+			continue
+		display[key] = _normalize_display(key, config.get_value(DISPLAY_SECTION, key))
 
 
 ## 移动键汇总文本，用于 HUD 提示（例如 W/A/S/D）。

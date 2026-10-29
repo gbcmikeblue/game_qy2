@@ -5,63 +5,86 @@
 [ext_resource type="Script" path="res://scripts/ui/touch_button.gd" id="3_btn"]
 [ext_resource type="Script" path="res://scripts/ui/ui_button.gd" id="4_menu"]
 
+; HUD 布局契约（《移动端多分辨率适配方案》§3.4 / §3.5）：
+; 所有元素用「边锚点 + 相对边距」表达，不再出现相对屏幕左上角的绝对坐标；
+; 边距单位是 1280×720 逻辑基准下的逻辑像素，运行期再由 hud.gd 叠加安全区内缩。
+; 锚点约定：0=左/上边，1=右/下边，0.5=居中；四个角各管一边。
+
 [node name="HUD" type="CanvasLayer"]
 script = ExtResource("1_hud")
 
 [node name="Joystick" type="Control" parent="."]
+anchor_top = 1.0
+anchor_bottom = 1.0
 offset_left = 32.0
-offset_top = 468.0
+offset_top = -252.0
 offset_right = 252.0
-offset_bottom = 688.0
+offset_bottom = -32.0
 mouse_filter = 0
 script = ExtResource("2_stick")
 
 [node name="AttackButton" type="Control" parent="."]
-offset_left = 1080.0
-offset_top = 516.0
-offset_right = 1216.0
-offset_bottom = 652.0
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -200.0
+offset_top = -204.0
+offset_right = -64.0
+offset_bottom = -68.0
 mouse_filter = 0
 script = ExtResource("3_btn")
 
 [node name="SettingsButton" type="Control" parent="."]
-offset_left = 1092.0
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -188.0
 offset_top = 16.0
-offset_right = 1256.0
+offset_right = -24.0
 offset_bottom = 54.0
 mouse_filter = 0
 script = ExtResource("4_menu")
 font_size = 18
 
 [node name="HpBack" type="ColorRect" parent="."]
+anchor_top = 1.0
+anchor_bottom = 1.0
 offset_left = 32.0
-offset_top = 424.0
+offset_top = -296.0
 offset_right = 312.0
-offset_bottom = 446.0
+offset_bottom = -274.0
 color = Color(0, 0, 0, 0.45)
 
 [node name="HpFill" type="ColorRect" parent="."]
+anchor_top = 1.0
+anchor_bottom = 1.0
 offset_left = 34.0
-offset_top = 426.0
+offset_top = -294.0
 offset_right = 310.0
-offset_bottom = 444.0
+offset_bottom = -276.0
 color = Color(0.839, 0.263, 0.263, 1)
 
 [node name="HpLabel" type="Label" parent="."]
+anchor_top = 1.0
+anchor_bottom = 1.0
 offset_left = 32.0
-offset_top = 396.0
+offset_top = -324.0
 offset_right = 312.0
-offset_bottom = 422.0
+offset_bottom = -298.0
 
 [node name="DebugLabel" type="Label" parent="."]
 offset_left = 24.0
 offset_top = 16.0
 offset_right = 424.0
-offset_bottom = 200.0
+offset_bottom = 256.0
 
 [node name="HintLabel" type="Label" parent="."]
-offset_left = 340.0
-offset_top = 676.0
-offset_right = 940.0
-offset_bottom = 702.0
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -300.0
+offset_top = -44.0
+offset_right = 300.0
+offset_bottom = -18.0
 horizontal_alignment = 1

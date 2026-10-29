@@ -1,22 +1,30 @@
 extends Node2D
 
-## 启动入口：装载地图 -> 玩家挂到地图的 y_sort 实体容器 -> 相机限位 -> 叠加 HUD。
+## 启动入口：世界层（SubViewport）-> 地图 -> 玩家挂到地图的 y_sort 实体容器 -> 相机限位 -> 叠加 HUD。
 ## 同时注入表现层（伤害飘字）使用的 FxLayer。
+##
+## 分层约定（《移动端多分辨率适配方案》§3.5）：
+##   世界（地图/玩家/敌人/飘字）全部在 WorldView 的 SubViewport 内，尺寸与 zoom 由 DisplayAdapter 给；
+##   HUD 是独立 CanvasLayer，只跟窗口逻辑坐标与安全区，不吃 render_scale。
 
 const MAP_SCENE := preload("res://scenes/maps/test_map.tscn")
 const PLAYER_SCENE := preload("res://scenes/actors/player/player.tscn")
 const HUD_SCENE := preload("res://scenes/ui/hud.tscn")
+const WORLD_VIEW := preload("res://scenes/boot/world_view.tscn")
 const TARGET_PICKER := preload("res://scripts/input/target_picker.gd")
 
 var map
 var player
+var world_view
+var world: SubViewport
 
 
 func _ready() -> void:
+	_build_world_view()
 	_build_fx_layer()
 
 	map = MAP_SCENE.instantiate()
-	add_child(map)
+	world.add_child(map)
 
 	player = PLAYER_SCENE.instantiate()
 	var spawn: Vector2 = map.spawn_world_position()
@@ -34,15 +42,44 @@ func _ready() -> void:
 	picker.name = "TargetPicker"
 	picker.set_script(TARGET_PICKER)
 	add_child(picker)
+	picker.call("setup", world_view)
+
 	add_child(HUD_SCENE.instantiate())
+
+	DisplayAdapter.layout_changed.connect(_apply_layout)
+	_apply_layout()
+
+
+func _exit_tree() -> void:
+	if DisplayAdapter.layout_changed.is_connected(_apply_layout):
+		DisplayAdapter.layout_changed.disconnect(_apply_layout)
+
+
+func _build_world_view() -> void:
+	world_view = WORLD_VIEW.instantiate()
+	add_child(world_view)
+	world = world_view.view
 
 
 func _build_fx_layer() -> void:
 	var layer := Node2D.new()
 	layer.name = "FxLayer"
 	layer.z_index = 100
-	add_child(layer)
+	world.add_child(layer)
 	CombatFx.layer = layer
+
+
+## 屏幕/档位变化：重设世界层渲染分辨率，并按「可见格数恒定」重算相机 zoom。
+## 只在离散档位与窗口尺寸变化时执行，不逐帧改，避免缩放抖动。
+func _apply_layout() -> void:
+	if not is_instance_valid(world_view):
+		return
+	world_view.set_render_size(DisplayAdapter.render_size)
+	var camera := player.get_node_or_null("Camera") as Camera2D
+	if camera == null:
+		return
+	camera.zoom = Vector2.ONE * DisplayAdapter.world_zoom
+	camera.reset_smoothing()
 
 
 func _apply_camera_limits() -> void:

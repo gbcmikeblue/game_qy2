@@ -872,24 +872,19 @@ func _test_auto_attack() -> void:
 	await get_tree().physics_frame
 
 
-## 模拟真实点击：发送一次鼠标按下+抬起（走 _unhandled_input 的拾取路径）。
-## 输入事件在下一帧才会派发，因此这里必须等帧。
+## 模拟真实点击：直接调用拾取器逻辑。
+## 世界层在独立 SubViewport 内渲染后，屏幕坐标换算由 WorldView 负责（main 已注入），
+## 因此这里走世界坐标入口 pick_at_world，验证的命中/选中语义与真实点击一致。
 func _click_enemy(enemy: Node) -> void:
-	var screen: Vector2 = get_viewport().get_canvas_transform() * enemy.global_position
-	await _click_screen(screen - Vector2(0.0, 26.0))
+	await _click_world(enemy.global_position - Vector2(0.0, 26.0))
 
 
 func _click_world(world_position: Vector2) -> void:
-	await _click_screen(get_viewport().get_canvas_transform() * world_position)
-
-
-func _click_screen(screen_position: Vector2) -> void:
-	# 直接调用拾取器逻辑：输入事件的派发由引擎负责，这里验证命中与选中行为。
 	var picker = _main.get_node_or_null("TargetPicker")
 	if picker == null:
 		_check(false, "场景里缺少 TargetPicker")
 		return
-	picker.pick_at_screen(screen_position)
+	picker.pick_at_world(world_position)
 	await get_tree().process_frame
 
 

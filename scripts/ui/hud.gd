@@ -5,10 +5,19 @@
 ## 主操作按钮的文案随“选中目标类型”变化（怪物=攻击 / NPC=交互 / 植物=采摘 / 玩家=观察），
 ## 类型到文案 key 的映射在 data/targets/interactions.json，语言由 Locale 实时切换。
 
-const HP_FILL_MAX := 276.0
+## 血条填充相对 HpBack 的内缩（左右各 2 逻辑像素），宽度按 HpBack 的实时宽度算比例，
+## 不再依赖硬编码的像素总宽（原 HP_FILL_MAX = 276 是 280-4 的写死值）。
+const HP_FILL_INSET := 2.0
+## 字号基准（1280×720 逻辑基准），统一乘 DisplayAdapter.ui_scale，不再逐控件硬编码。
+const FONT_SIZE_DEBUG := 18
+const FONT_SIZE_HP := 20
+const FONT_SIZE_HINT := 16
+## 调试信息不参与界面缩放：它的行数会撑高控件，放大后会压到左下角血条区。
+const NO_UI_SCALE := ["DebugLabel"]
 const SETTINGS_PANEL := preload("res://scenes/ui/settings_panel.tscn")
 
 @onready var _debug_label: Label = $DebugLabel
+@onready var _hp_back: ColorRect = $HpBack
 @onready var _hp_fill: ColorRect = $HpFill
 @onready var _hp_label: Label = $HpLabel
 @onready var _attack_button = $AttackButton
@@ -18,6 +27,8 @@ const SETTINGS_PANEL := preload("res://scenes/ui/settings_panel.tscn")
 var _lock_line := ""
 var _panel: Node = null
 var _action_key := ""
+## 各控件相对锚点的原始边距（来自 hud.tscn），安全区变化时以它为准重算，避免累加漂移。
+var _base_offsets: Dictionary = {}
 
 
 func _ready() -> void:
@@ -27,11 +38,17 @@ func _ready() -> void:
 		label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.92))
 		label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
 		label.add_theme_constant_override("outline_size", 4)
-	# Teko 字身偏窄偏小，字号统一上调一档保证可读性。
-	_debug_label.add_theme_font_size_override("font_size", 18)
-	_hp_label.add_theme_font_size_override("font_size", 20)
-	_hint_label.add_theme_font_size_override("font_size", 16)
 	_hint_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.55))
+	# 调试信息行数会撑高控件，裁到自己盒子里，避免任何情况下压到血条。
+	_debug_label.clip_text = true
+
+	for child: Node in get_children():
+		if child is Control:
+			var control := child as Control
+			_base_offsets[control] = Vector4(
+				control.offset_left, control.offset_top, control.offset_right, control.offset_bottom)
+	DisplayAdapter.layout_changed.connect(_on_layout_changed)
+	_on_layout_changed()
 
 	_settings_button.pressed.connect(_on_settings_pressed)
 	Locale.language_changed.connect(_on_texts_changed)
@@ -39,10 +56,75 @@ func _ready() -> void:
 	_refresh_texts()
 
 
+func _exit_tree() -> void:
+	if DisplayAdapter.layout_changed.is_connected(_on_layout_changed):
+		DisplayAdapter.layout_changed.disconnect(_on_layout_changed)
+
+
+## 字号 dp 化：基准字号 × ui_scale，控件不再各自写死数字。
+## Teko 字身偏窄偏小，基准值已比常规上调一档。
+func _apply_fonts() -> void:
+	_debug_label.add_theme_font_size_override("font_size", FONT_SIZE_DEBUG)
+	_hp_label.add_theme_font_size_override("font_size", _font_size(FONT_SIZE_HP))
+	_hint_label.add_theme_font_size_override("font_size", _font_size(FONT_SIZE_HINT))
+
+
+func _font_size(base: int) -> int:
+	return maxi(10, roundi(float(base) * DisplayAdapter.ui_scale))
+
+
+## HUD 锚定「视口矩形内缩 safe_insets 后的矩形」：元素本身仍用边锚点，
+## 这里只按锚定方向把边距整体推/收一个安全区量，尺寸保持不变（§3.4）。
+## 旋转、折叠屏展开、分屏都会触发 layout_changed，重排只改边距，不重建节点、不丢状态。
+## 视口尺寸 / 安全区 / ui_scale 变化：字号与控件一起重排一次（不重建节点、不丢状态）。
+func _on_layout_changed() -> void:
+	_apply_fonts()
+	apply_safe_layout(DisplayAdapter.safe_insets)
+
+
+## 按给定安全区内缩重算所有子控件的边距（语义见 DisplayAdapter.compute_safe_insets）。
+## 单独抽出来是为了让验收脚本能在固定视口尺寸下复用同一条布局路径。
+## 边距先乘 ui_scale（整层等比放大/缩小），再叠加安全区位移。
+func apply_safe_layout(insets: Vector4) -> void:
+	var scale := DisplayAdapter.ui_scale
+	for child: Node in get_children():
+		if not (child is Control) or not _base_offsets.has(child):
+			continue
+		var control := child as Control
+		var base: Vector4 = _base_offsets[control]
+		var own_scale := 1.0 if NO_UI_SCALE.has(String(control.name)) else scale
+		var dx := _axis_shift(control.anchor_left, control.anchor_right, insets.x, insets.z)
+		var dy := _axis_shift(control.anchor_top, control.anchor_bottom, insets.y, insets.w)
+		control.offset_left = base.x * own_scale + dx
+		control.offset_right = base.z * own_scale + dx
+		control.offset_top = base.y * own_scale + dy
+		control.offset_bottom = base.w * own_scale + dy
+
+
+## 按锚点方向求位移：贴左边→+起始内缩，贴右边→-结束内缩，居中→按差值取半。
+func _axis_shift(start_anchor: float, end_anchor: float,
+		start_inset: float, end_inset: float) -> float:
+	if is_equal_approx(start_anchor, end_anchor):
+		if is_zero_approx(start_anchor):
+			return start_inset
+		if is_equal_approx(start_anchor, 1.0):
+			return -end_inset
+		if is_equal_approx(start_anchor, 0.5):
+			return (start_inset - end_inset) * 0.5
+	return 0.0
+
+
+## 暂停门控（§3.7）：暂停/切后台时主操作按钮置灰且不响应，避免暂停态下误触攻击。
+## 切后台的暂停由 GameManager 负责，HUD 只消费状态。
+func _update_interaction_gate() -> void:
+	_attack_button.set_disabled(GameManager.is_paused)
+
+
 func _process(_delta: float) -> void:
 	_update_health()
 	_update_lock()
 	_update_action_button()
+	_update_interaction_gate()
 	_update_debug()
 
 
@@ -103,7 +185,9 @@ func _update_health() -> void:
 	var current: int = player.get_hp()
 	var maximum: int = player.get_max_hp()
 	var ratio := clampf(float(current) / float(maxi(1, maximum)), 0.0, 1.0)
-	_hp_fill.size = Vector2(HP_FILL_MAX * ratio, _hp_fill.size.y)
+	# 宽度按 HpBack 的实时宽度取比例（锚点化后血条宽度随安全区/视口变化）。
+	var full_width := maxf(0.0, _hp_back.size.x - HP_FILL_INSET * 2.0)
+	_hp_fill.size = Vector2(full_width * ratio, _hp_fill.size.y)
 	_hp_label.text = Locale.t("hud.hp", [current, maximum])
 
 
@@ -137,8 +221,12 @@ func _update_debug() -> void:
 		lines.append(Locale.t("hud.world", [world.x, world.y]))
 		lines.append(Locale.t("hud.grid", [grid.x, grid.y]))
 		lines.append(Locale.t("hud.speed", [(player as CharacterBody2D).velocity.length()]))
-		lines.append(Locale.t("hud.auto.on") if player.is_auto_approaching() else Locale.t("hud.auto.off"))
-		lines.append(Locale.t("hud.auto_attack.on") if player.is_auto_attack_active() else Locale.t("hud.auto_attack.off"))
+		# 自动接近与持续攻击合成一行：9 行在 720 逻辑高度下会挤到左下角血条区。
+		lines.append("%s  %s" % [
+			Locale.t("hud.auto.on") if player.is_auto_approaching() else Locale.t("hud.auto.off"),
+			Locale.t("hud.auto_attack.on") if player.is_auto_attack_active()
+				else Locale.t("hud.auto_attack.off"),
+		])
 		if not player.is_alive():
 			lines.append(Locale.t("hud.dead"))
 
