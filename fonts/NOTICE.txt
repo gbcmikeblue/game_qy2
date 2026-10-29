@@ -1,8 +1,17 @@
-Teko.ttf
-Source : Google Fonts (https://fonts.google.com/specimen/Teko)
-Method : downloaded via https://fonts.gstatic.com/s/teko/v23/... (static TTF instance)
+LXGWWenKaiLite-Regular.ttf
+Source : LXGW WenKai（霞鹜文楷）Lite，https://github.com/lxgw/LxgwWenKai
+Method : 官方 Release v1.520 的 LXGWWenKaiLite-Regular.ttf，未做任何修改（未子集化、未改名）
 License: SIL Open Font License 1.1（全文见同目录 OFL.txt）
+Copyright: Copyright 2021-2026 LXGW (https://github.com/lxgw/LxgwWenKai)，
+           with Reserved Font Name '霞鹜', '霞鶩', '落霞孤鹜', '落霞孤鶩' and 'LXGW'.
+
+覆盖范围：
+- 中文常用字（Lite 版为精简字表）+ 拉丁/数字/常用符号，满足 data/i18n 全部文案；
+- 冷僻字与部分符号仍由系统字体回退（autoload/locale.gd 的 FONT_NAMES）。
 
 发布注意：
-- 替换字体时请同步更新本文件与 OFL.txt；
-- 建议把字体 name 表里的版权行（Copyright ... with Reserved Font Name ...）一并保留在发行包内。
+- 本字体未修改，保留字体 name 表内的版权行与保留字体名，符合 OFL 要求；
+- 发行包内必须随附本文件与 OFL.txt；
+- 若后续对字体做子集化/格式转换（属于 Modified Version），OFL 的保留字体名条款要求改名，
+  官方 ADDITIONAL PERMISSION 只对「不做其他改动的重编译」和「仅用于网页字体分发的子集」放宽，
+  因此子集化后请不要继续使用「霞鹜 / LXGW」作为字体名，并重新核对授权。

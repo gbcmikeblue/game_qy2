@@ -131,13 +131,14 @@ func _script_files(root: String) -> Array[String]:
 
 func _test_font() -> void:
 	_check(Locale.font != null, "字体资源已加载")
-	_check(ResourceLoader.exists(Locale.BUNDLED_FONT), "内置 Teko 字体文件存在")
-	_check(Locale.font is FontFile, "内置 Teko 生效（FontFile）")
-	_check(Locale.font.fallbacks.size() > 0, "Teko 配置了中日韩回退字体")
+	_check(ResourceLoader.exists(Locale.BUNDLED_FONT), "内置霞鹜文楷字体文件存在")
+	_check(Locale.font is FontFile, "内置霞鹜文楷生效（FontFile）")
+	_check(Locale.font.fallbacks.size() > 0, "霞鹜文楷配置了系统回退字体")
 	_check(Locale.font.get_string_size("SETTINGS", HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x > 30.0,
-			"Teko 能测量拉丁字串")
+			"内置字体能测量拉丁字串")
 	_check(Locale.font.get_string_size("设置", HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x > 20.0,
-			"回退字体能测量中文字串")
+			"内置字体能测量中文字串")
+	_check(Locale.font.has_char("设".unicode_at(0)), "中文字形由内置字体直接提供（不依赖回退）")
 
 
 func _test_language_persistence() -> void:

@@ -2,13 +2,13 @@
 
 importer="font_data_dynamic"
 type="FontFile"
-uid="uid://b2yfht6dx08fg"
-path="res://.godot/imported/Teko.ttf-abdc09451f254359591d8969138b96d3.fontdata"
+uid="uid://cvtw8r5kyirwp"
+path="res://.godot/imported/LXGWWenKaiLite-Regular.ttf-2e0beb6442cfa8be57d8d2507238e3bf.fontdata"
 
 [deps]
 
-source_file="res://fonts/Teko.ttf"
-dest_files=["res://.godot/imported/Teko.ttf-abdc09451f254359591d8969138b96d3.fontdata"]
+source_file="res://fonts/LXGWWenKaiLite-Regular.ttf"
+dest_files=["res://.godot/imported/LXGWWenKaiLite-Regular.ttf-2e0beb6442cfa8be57d8d2507238e3bf.fontdata"]
 
 [params]
 

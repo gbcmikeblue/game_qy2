@@ -10,8 +10,9 @@ const SUPPORTED := ["en", "zh"]
 const DEFAULT_LANGUAGE := "en"
 const SAVE_PATH := "user://locale.cfg"
 const I18N_DIR := "res://data/i18n/"
-## 内置的拉丁字体（Teko，SIL OFL 1.1）。缺中日韩字形，中文由系统字体回退。
-const BUNDLED_FONT := "res://fonts/Teko.ttf"
+## 内置正文/标题字体：霞鹜文楷 Lite（SIL OFL 1.1，中文全覆盖）。
+## 保留系统字体回退，兜住字形表外的冷僻字与特殊符号。
+const BUNDLED_FONT := "res://fonts/LXGWWenKaiLite-Regular.ttf"
 const FONT_NAMES := [
 	"Microsoft YaHei UI",
 	"Microsoft YaHei",
@@ -23,7 +24,7 @@ const FONT_NAMES := [
 ]
 
 var current := DEFAULT_LANGUAGE
-## 全局字体：默认字体缺中日韩字形，所有 UI 与自定义绘制都用这个。
+## 全局字体：所有 UI 与自定义绘制都用这个（霞鹜文楷 + 系统回退链）。
 var font: Font
 
 var _tables: Dictionary = {}
@@ -83,7 +84,7 @@ func _build_font() -> void:
 	system.font_names = PackedStringArray(FONT_NAMES)
 	system.antialiasing = TextServer.FONT_ANTIALIASING_GRAY
 
-	# 优先使用内置 Teko（拉丁字形），中文/日文走系统字体回退。
+	# 优先使用内置霞鹜文楷（中文 + 拉丁），字形表外的字符走系统字体回退。
 	if ResourceLoader.exists(BUNDLED_FONT):
 		var bundled := load(BUNDLED_FONT) as Font
 		if bundled != null:
