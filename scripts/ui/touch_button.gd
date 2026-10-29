@@ -2,12 +2,24 @@ extends Control
 
 ## 触屏按钮：按下高亮，抬起广播一次攻击请求。支持禁用态（无可用操作时置灰且不响应）。
 ## 目标选中不经过按钮：它由世界点击拾取器负责，选中与攻击完全分离。
+##
+## 触控契约（方案 §3.7）：
+## 1. 多指并发——只认第一根按下并持有按钮的手指（event.index），其余手指的按下/抬起一律忽略，
+##    避免"摇杆 + 攻击 + 目标选择"三指同时操作时重复触发；
+## 2. 单指幂等——移动端的「触摸模拟鼠标」会给同一次点按投递两条事件路径，
+##    因此按下/抬起都按 _held 去重，单指只产生一次 attack_pressed 与一次 attack_requested；
+## 3. 热区补偿——控件物理尺寸不足 44dp 时命中区自动外扩（绘制尺寸不变）。
+
+## 最小可点物理尺寸（dp）。
+const MIN_TOUCH_DP := 44.0
 
 @export var radius := 56.0
 @export var caption := "ATK"
 
 var _held := false
 var _disabled := false
+## 当前持有按钮的手指编号；-1 表示无人持有。
+var _touch_index := -1
 
 
 func _ready() -> void:
@@ -17,6 +29,13 @@ func _ready() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
 		queue_redraw()
+
+
+## 热区补偿：控件本身够大时命中区就是自身矩形，不够大时向外扩到 44dp。
+func _has_point(point: Vector2) -> bool:
+	if not Rect2(Vector2.ZERO, size).has_point(point):
+		return DisplayAdapter.expand_hit_rect(Rect2(Vector2.ZERO, size), MIN_TOUCH_DP).has_point(point)
+	return true
 
 
 ## 文案变化需要主动重绘（直接改 caption 属性不会触发 _draw）。
@@ -33,6 +52,7 @@ func set_disabled(value: bool) -> void:
 	_disabled = value
 	if _disabled:
 		_held = false
+		_touch_index = -1
 	queue_redraw()
 
 
@@ -44,9 +64,12 @@ func _gui_input(event: InputEvent) -> void:
 	if _disabled:
 		return
 	if event is InputEventScreenTouch:
-		if event.pressed:
-			_press()
-		else:
+		var touch := event as InputEventScreenTouch
+		if touch.pressed:
+			if _touch_index == -1 and not _held:
+				_touch_index = touch.index
+				_press()
+		elif touch.index == _touch_index:
 			_release()
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
@@ -56,6 +79,8 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _press() -> void:
+	if _held:
+		return
 	_held = true
 	queue_redraw()
 	# 按下即通知，用于“长按达到秒数触发持续攻击”；动作本身仍只在抬起时触发。
@@ -66,6 +91,7 @@ func _release() -> void:
 	if not _held:
 		return
 	_held = false
+	_touch_index = -1
 	queue_redraw()
 	EventBus.attack_requested.emit()
 

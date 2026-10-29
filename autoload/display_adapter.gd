@@ -329,6 +329,16 @@ func dp(dp_value: float) -> float:
 	return dp_to_ui(dp_value, float(DisplayServer.screen_get_dpi()), content_scale, ui_scale)
 
 
+## 触控热区补偿：把矩形外扩到物理尺寸不小于 min_dp（逻辑单位，按当前 dpi/content_scale 换算）。
+## 控件本身尺寸不变，只放大可点区域，因此不会影响布局。
+func expand_hit_rect(rect: Rect2, min_dp: float) -> Rect2:
+	var min_size := dp(min_dp)
+	var grow := Vector2(
+		maxf(0.0, min_size - rect.size.x),
+		maxf(0.0, min_size - rect.size.y)) * 0.5
+	return rect.grow_individual(grow.x, grow.y, grow.x, grow.y)
+
+
 ## 安全区内缩（逻辑坐标）。取「系统安全区」与「设计内缩」的较大者：
 ## 系统返回空或全屏时只剩设计内缩，不会因为读不到安全区就没有边距。
 static func compute_safe_insets(viewport: Vector2, screen: Vector2,
