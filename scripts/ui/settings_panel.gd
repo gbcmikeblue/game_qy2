@@ -32,18 +32,10 @@ const COMBAT_TITLE_TOP := 254.0
 const COMBAT_ROW_TOP := 292.0
 const HINT_TOP := 382.0
 const DISPLAY_TITLE_TOP := 420.0
-const PRESET_GRID_TOP := 456.0
 const PRESET_COLUMNS := 2
 const PRESET_BUTTON_WIDTH := 286.0
 const PRESET_BUTTON_HEIGHT := 40.0
 const PRESET_ROW_HEIGHT := 46.0
-const PRESET_INFO_TOP := 644.0
-const QUALITY_TITLE_TOP := 704.0
-const QUALITY_ROW_TOP := 738.0
-const VIEW_TITLE_TOP := 788.0
-const VIEW_ROW_TOP := 822.0
-const UI_SCALE_ROW_TOP := 872.0
-const FREE_NOTE_TOP := 918.0
 const BODY_HEIGHT := 1000.0
 
 const CAPTURE_TIMEOUT := 6.0
@@ -80,7 +72,6 @@ var _close_button: UiButton
 var _capturing := ""
 var _capture_time := 0.0
 var _notice_time := 0.0
-var _paused_by_panel := false
 
 
 func _ready() -> void:
@@ -210,55 +201,66 @@ func _build() -> void:
 	_build_display_section()
 
 
-## 「显示」区块：分辨率档位（2 列网格）+ 档位说明 + 画质 + 视野 + 界面缩放 + 窗口状态提示。
+## 「显示」区块：分辨率档位（仅桌面）+ 档位说明 + 画质 + 视野 + 界面缩放 + 窗口状态提示。
+## 移动端没有窗口尺寸可选，整块档位区直接跳过并把后面的行往上收（方案 §7.3）。
 func _build_display_section() -> void:
 	_display_title = _label(Vector2(28.0, DISPLAY_TITLE_TOP), Vector2(560.0, 32.0), 20)
+	var y := DISPLAY_TITLE_TOP + 36.0
 
-	var ids := DisplayAdapter.preset_ids()
-	for i in ids.size():
-		var column := i % PRESET_COLUMNS
-		var line := i / PRESET_COLUMNS
-		var position := Vector2(
-			float(column) * (PRESET_BUTTON_WIDTH + 14.0),
-			PRESET_GRID_TOP + float(line) * PRESET_ROW_HEIGHT)
-		var button := _button(_body, position, Vector2(PRESET_BUTTON_WIDTH, PRESET_BUTTON_HEIGHT))
-		var id := ids[i]
-		button.pressed.connect(_on_preset_pressed.bind(id))
-		_preset_buttons[id] = button
+	if not DisplayAdapter.is_mobile():
+		var ids := DisplayAdapter.preset_ids()
+		for i in ids.size():
+			var column := i % PRESET_COLUMNS
+			var line := i / PRESET_COLUMNS
+			var position := Vector2(
+				float(column) * (PRESET_BUTTON_WIDTH + 14.0),
+				y + float(line) * PRESET_ROW_HEIGHT)
+			var button := _button(_body, position,
+				Vector2(PRESET_BUTTON_WIDTH, PRESET_BUTTON_HEIGHT))
+			var id := ids[i]
+			button.pressed.connect(_on_preset_pressed.bind(id))
+			_preset_buttons[id] = button
 
-	_preset_info = _label(Vector2(28.0, PRESET_INFO_TOP), Vector2(560.0, 58.0), 16)
-	_preset_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_preset_info.add_theme_color_override("font_color", Color(0.80, 0.88, 1.0, 1.0))
+		var rows := ceili(float(ids.size()) / float(PRESET_COLUMNS))
+		y += float(rows) * PRESET_ROW_HEIGHT + 6.0
+		_preset_info = _label(Vector2(28.0, y), Vector2(560.0, 58.0), 16)
+		_preset_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_preset_info.add_theme_color_override("font_color", Color(0.80, 0.88, 1.0, 1.0))
+		y += 64.0
 
-	_quality_title = _label(Vector2(28.0, QUALITY_TITLE_TOP), Vector2(560.0, 32.0), 20)
+	_quality_title = _label(Vector2(28.0, y), Vector2(560.0, 32.0), 20)
+	y += 34.0
 	var quality_row := 0
 	for tier: String in GameSettings.QUALITY_TIERS:
 		var button := _button(_body,
-				Vector2(float(quality_row) * 145.0, QUALITY_ROW_TOP), Vector2(136.0, 36.0))
+				Vector2(float(quality_row) * 145.0, y), Vector2(136.0, 36.0))
 		button.pressed.connect(_on_quality_pressed.bind(tier))
 		_quality_buttons[tier] = button
 		quality_row += 1
+	y += 44.0
 
-	_view_title = _label(Vector2(28.0, VIEW_TITLE_TOP), Vector2(560.0, 32.0), 20)
+	_view_title = _label(Vector2(28.0, y), Vector2(560.0, 32.0), 20)
+	y += 34.0
 	var view_row := 0
 	for key: String in DisplayAdapter.VIEW_SCALES:
-		var button := _button(_body,
-				Vector2(float(view_row) * 191.0, VIEW_ROW_TOP), Vector2(182.0, 36.0))
+		var button := _button(_body, Vector2(float(view_row) * 191.0, y), Vector2(182.0, 36.0))
 		button.pressed.connect(_on_view_pressed.bind(key))
 		_view_buttons[key] = button
 		view_row += 1
+	y += 44.0
 
-	_ui_scale_label = _label(Vector2(40.0, UI_SCALE_ROW_TOP), Vector2(280.0, 34.0), 18)
-	var minus := _button(_body, Vector2(348.0, UI_SCALE_ROW_TOP - 2.0), Vector2(44.0, 34.0))
+	_ui_scale_label = _label(Vector2(40.0, y), Vector2(280.0, 34.0), 18)
+	var minus := _button(_body, Vector2(348.0, y - 2.0), Vector2(44.0, 34.0))
 	minus.set_caption("-")
 	minus.pressed.connect(_on_ui_scale_step.bind(-1))
-	_ui_scale_value = _label(Vector2(400.0, UI_SCALE_ROW_TOP), Vector2(124.0, 34.0), 18)
+	_ui_scale_value = _label(Vector2(400.0, y), Vector2(124.0, 34.0), 18)
 	_ui_scale_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var plus := _button(_body, Vector2(532.0, UI_SCALE_ROW_TOP - 2.0), Vector2(44.0, 34.0))
+	var plus := _button(_body, Vector2(532.0, y - 2.0), Vector2(44.0, 34.0))
 	plus.set_caption("+")
 	plus.pressed.connect(_on_ui_scale_step.bind(1))
+	y += 42.0
 
-	_free_note = _label(Vector2(28.0, FREE_NOTE_TOP), Vector2(560.0, 48.0), 15)
+	_free_note = _label(Vector2(28.0, y), Vector2(560.0, 48.0), 15)
 	_free_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 
@@ -357,16 +359,26 @@ func _refresh_display() -> void:
 
 	_ui_scale_value.text = Locale.t("display.ui_scale.value", [GameSettings.display_ui_scale()])
 
-	var window_size := DisplayAdapter.target_window_size(current_preset)
-	var render := DisplayAdapter.render_size_for(
-		Vector2(window_size), DisplayAdapter.render_scale())
-	var tiles := DisplayAdapter.visible_tiles(render, DisplayAdapter.view_area_scale)
-	_preset_info.text = "%s\n%s" % [
-		Locale.t("display.preset." + current_preset + ".hint"),
-		Locale.t("display.info", [window_size.x, window_size.y,
-			int(render.x), int(render.y), int(round(tiles))]),
-	]
-	_free_note.text = Locale.t("display.free_resize") if DisplayAdapter.free_resize \
+	# 档位说明只在桌面存在（移动端跳过整块档位区）。
+	if is_instance_valid(_preset_info):
+		var window_size := DisplayAdapter.target_window_size(current_preset)
+		var render := DisplayAdapter.render_size_for(
+			Vector2(window_size), DisplayAdapter.render_scale())
+		var tiles := DisplayAdapter.visible_tiles(render, DisplayAdapter.view_area_scale)
+		_preset_info.text = "%s\n%s" % [
+			Locale.t("display.preset." + current_preset + ".hint"),
+			Locale.t("display.info", [window_size.x, window_size.y,
+				int(render.x), int(render.y), int(round(tiles))]),
+		]
+
+	_free_note.text = _window_note_text()
+
+
+## 窗口状态提示：移动端由系统全屏决定；桌面区分调试自由缩放与发布锁定。
+func _window_note_text() -> String:
+	if DisplayAdapter.is_mobile():
+		return Locale.t("display.mobile")
+	return Locale.t("display.free_resize") if DisplayAdapter.free_resize \
 		else Locale.t("display.locked")
 
 
@@ -497,18 +509,14 @@ func _show_notice(text: String) -> void:
 	_notice_time = NOTICE_DURATION
 
 
+## 面板只持有自己的「设置」暂停原因：切后台、手动 ESC 等其它原因不影响它，
+## 反过来它关闭时也不会把别的暂停原因一起解掉。
 func _pause_game() -> void:
-	if GameManager.is_paused:
-		return
-	GameManager.set_paused(true)
-	_paused_by_panel = true
+	GameManager.hold_pause(GameManager.PAUSE_SETTINGS)
 
 
 func _resume_game() -> void:
-	if not _paused_by_panel:
-		return
-	_paused_by_panel = false
-	GameManager.set_paused(false)
+	GameManager.release_pause(GameManager.PAUSE_SETTINGS)
 
 
 func _close() -> void:

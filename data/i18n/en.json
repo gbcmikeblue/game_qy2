@@ -85,5 +85,6 @@
   "display.applied": "APPLIED",
   "display.unavailable": "This monitor cannot fit that tier",
   "display.locked": "Window size is fixed by the selected tier.",
+  "display.mobile": "Mobile runs fullscreen; window size is set by the system.",
   "display.free_resize": "Debug build: window resizes freely; tiers are just reference sizes."
 }

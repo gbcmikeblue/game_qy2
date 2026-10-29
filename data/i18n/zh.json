@@ -85,5 +85,6 @@
   "display.applied": "已应用",
   "display.unavailable": "当前显示器放不下该档位",
   "display.locked": "窗口尺寸由档位决定，不可自由拖拽。",
+  "display.mobile": "移动端由系统全屏显示，窗口尺寸不可选。",
   "display.free_resize": "调试构建：窗口可自由缩放，档位只作参考尺寸。"
 }

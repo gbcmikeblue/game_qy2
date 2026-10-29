@@ -86,6 +86,22 @@ func _ready() -> void:
 	get_window().size_changed.connect(_on_window_resized)
 	GameSettings.display_changed.connect(_on_display_settings_changed)
 	refresh()
+	_log_metrics()
+
+
+static func is_mobile() -> bool:
+	return OS.has_feature("mobile")
+
+
+## 调试构建启动时打一行关键指标：真机验收直接读 logcat 就能核对安全区/渲染分辨率/zoom，
+## 不用靠猜截图。发布构建不输出。
+func _log_metrics() -> void:
+	if not OS.is_debug_build():
+		return
+	print("[Display] screen=%s logical=%s render=%s zoom=%.3f tiles=%.0f insets=%s preset=%s quality=%s ui=%.2f view=%.2f free_resize=%s" % [
+		str(screen_size), str(logical_size), str(render_size), world_zoom,
+		visible_tiles(render_size, view_area_scale), str(safe_insets),
+		resolution_preset, quality_tier, ui_scale, view_area_scale, str(free_resize)])
 
 
 ## 窗口缩放后等一帧再算：size_changed 时根视口的逻辑尺寸可能还没更新完。
@@ -104,7 +120,7 @@ func _sync_from_settings() -> void:
 
 
 func _apply_window_constraints() -> void:
-	if OS.has_feature("mobile"):
+	if is_mobile():
 		return
 	var window := get_window()
 	if free_resize:
@@ -118,7 +134,7 @@ func _apply_window_constraints() -> void:
 
 ## 启动时套用已保存的档位。调试构建不强制改窗口尺寸，避免覆盖 `--resolution` 等调试参数。
 func _apply_startup_preset() -> void:
-	if free_resize or OS.has_feature("mobile"):
+	if free_resize or is_mobile():
 		return
 	set_resolution_preset(resolution_preset)
 
@@ -219,7 +235,7 @@ func set_resolution_preset(id: String) -> void:
 	if not is_known_preset(id):
 		return
 	resolution_preset = id
-	if not OS.has_feature("mobile"):
+	if not is_mobile():
 		var size := target_window_size(id)
 		var window := get_window()
 		if window.size != size:
@@ -370,10 +386,13 @@ static func compute_safe_insets(viewport: Vector2, screen: Vector2,
 ## 首次启动的设备档位探测（用户可在设置里覆盖）：桌面无填充率压力，直接给高档。
 ## 注意：档位只影响采样密度，不改变可见格数，因此探测失误不会影响玩法。
 static func detect_tier() -> String:
-	if not OS.has_feature("mobile"):
+	if not is_mobile():
 		return "high"
 	var adapter := String(RenderingServer.get_video_adapter_name()).to_lower()
-	if adapter.contains("adreno 7") or adapter.contains("immortalis") or adapter.contains("apple a1"):
+	# 旗舰档：Adreno 7xx/8xx/9xx、Immortalis、Apple A1x+（真机样本：Adreno (TM) 830 → high）
+	if adapter.contains("adreno 7") or adapter.contains("adreno 8") \
+			or adapter.contains("adreno 9") or adapter.contains("immortalis") \
+			or adapter.contains("apple a1"):
 		return "high"
 	if adapter.contains("adreno 5") or adapter.contains("mali-g3") \
 			or adapter.contains("mali-g5") or adapter.contains("powervr ge8"):
