@@ -154,10 +154,30 @@ func _test_background_pause() -> void:
 	# 其它来源已经暂停时（例如设置面板），切后台/回前台不得改动它。
 	GameManager.set_paused(true)
 	GameManager.pause_for_background()
-	_check(not GameManager.is_background_paused(), "已有暂停来源时不重复接管")
+	_check(GameManager.is_background_paused(), "后台原因与其它原因各自持有")
 	GameManager.resume_from_background()
-	_check(GameManager.is_paused, "回前台不解除其它来源的暂停")
+	_check(GameManager.is_paused, "释放后台原因后其它原因的暂停仍然生效")
 	GameManager.set_paused(false)
+	_check(not GameManager.is_paused, "清空原因后恢复运行")
+
+	# 手动暂停（ESC）不得顶掉设置面板的暂停。
+	GameManager.hold_pause(GameManager.PAUSE_SETTINGS)
+	GameManager.set_paused(true)
+	GameManager.set_paused(false)
+	_check(GameManager.is_paused, "手动暂停释放后设置面板的暂停仍在")
+	_check(GameManager.pause_reasons() == ["settings"], "剩余暂停原因只有 settings（%s）"
+		% str(GameManager.pause_reasons()))
+
+	# 同一原因重复持有只广播一次状态变化。
+	var emitted := 0
+	var counter := func(_paused: bool) -> void: emitted += 1
+	EventBus.game_paused.connect(counter)
+	GameManager.clear_pauses()
+	GameManager.hold_pause(GameManager.PAUSE_MANUAL)
+	GameManager.hold_pause(GameManager.PAUSE_MANUAL)
+	EventBus.game_paused.disconnect(counter)
+	_check(emitted == 1, "同一原因重复持有只广播一次暂停状态（实际 %d）" % emitted)
+	GameManager.clear_pauses()
 
 	var config := ConfigFile.new()
 	var loaded := config.load(GameSettings.SAVE_PATH) == OK

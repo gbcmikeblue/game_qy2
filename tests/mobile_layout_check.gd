@@ -51,6 +51,7 @@ func _ready() -> void:
 	_test_anchor_contract()
 	await _test_hud_safe_layout()
 	await _test_ui_scale_layout()
+	await _test_debug_label_gate()
 	await _test_world_view_wiring()
 	_report()
 
@@ -199,6 +200,23 @@ func _test_ui_scale_layout() -> void:
 	DisplayAdapter.ui_scale = saved_scale
 	hud.apply_safe_layout(insets)
 	await get_tree().process_frame
+	sub.queue_free()
+	await get_tree().process_frame
+
+
+## 调试信息只在调试构建里显示（发布构建不应出现 FPS/坐标等开发信息）。
+func _test_debug_label_gate() -> void:
+	var sub := SubViewport.new()
+	sub.size = Vector2i(1280, 720)
+	sub.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	add_child(sub)
+	var hud := HUD_SCENE.instantiate()
+	sub.add_child(hud)
+	await get_tree().process_frame
+	var debug_label := hud.get_node("DebugLabel") as Label
+	_check(debug_label.visible == OS.is_debug_build(),
+		"调试信息可见性跟随构建类型（visible=%s，debug=%s）" % [
+			str(debug_label.visible), str(OS.is_debug_build())])
 	sub.queue_free()
 	await get_tree().process_frame
 

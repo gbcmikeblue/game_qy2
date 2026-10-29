@@ -41,6 +41,8 @@ func _ready() -> void:
 	_hint_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.55))
 	# 调试信息行数会撑高控件，裁到自己盒子里，避免任何情况下压到血条。
 	_debug_label.clip_text = true
+	# 发布构建不显示调试信息（FPS/坐标/状态），只在调试构建里给开发者看。
+	_debug_label.visible = OS.is_debug_build()
 
 	for child: Node in get_children():
 		if child is Control:
@@ -206,6 +208,8 @@ func _update_lock() -> void:
 
 
 func _update_debug() -> void:
+	if not _debug_label.visible:
+		return
 	var lines: Array[String] = []
 	lines.append(Locale.t("hud.fps", [Engine.get_frames_per_second()]))
 	lines.append(Locale.t("hud.state", [

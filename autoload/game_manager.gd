@@ -3,17 +3,21 @@ extends Node
 ## 全局流程控制：暂停、当前玩家引用。
 ## 阶段 A 只承担这两件事，不参与战斗/掉落等业务规则。
 ##
-## 暂停有三个来源，互不覆盖：
-##   1. 设置面板（自己 set_paused(true) / set_paused(false)）；
-##   2. 切后台/失焦（本层的 pause_for_background()，恢复时只撤销自己加的那次）；
-##   3. 键盘 ui_cancel 手动切换。
+## 暂停用「原因集合」表达（方案 §7.7）：设置面板、切后台、键盘手动各持有一个原因，
+## 只要有任一原因存在就暂停，最后一个原因释放时才真正恢复。
+## 这样三个来源不会互相覆盖（旧实现里 ESC 或回前台会把设置面板的暂停顶掉）。
 ## 切后台同时把设置落盘，避免进程被系统杀掉后丢配置。
 
+## 暂停原因。
+const PAUSE_SETTINGS := "settings"
+const PAUSE_BACKGROUND := "background"
+const PAUSE_MANUAL := "manual"
+
 var player: Node2D = null
+## 派生状态：等价于「原因集合非空」。对外只读，改动请走 hold_pause/release_pause。
 var is_paused := false
 
-## 当前暂停是否由「切后台」触发；用于恢复时不去动设置面板等其它来源的暂停。
-var _background_paused := false
+var _reasons: Dictionary = {}
 
 
 func _ready() -> void:
@@ -30,35 +34,80 @@ func _notification(what: int) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_cancel"):
-		set_paused(not is_paused)
+	if not event.is_action_pressed("ui_cancel"):
+		return
+	# ESC 只切换「手动」这一个原因：设置面板打开时按 ESC 不会把面板的暂停顶掉。
+	if _reasons.has(PAUSE_MANUAL):
+		release_pause(PAUSE_MANUAL)
+	else:
+		hold_pause(PAUSE_MANUAL)
 
 
+## 增加一个暂停原因（重复调用无副作用）。
+func hold_pause(reason: String) -> void:
+	if _reasons.has(reason):
+		return
+	_reasons[reason] = true
+	_sync_pause()
+
+
+## 释放一个暂停原因（重复调用无副作用）。
+func release_pause(reason: String) -> void:
+	if not _reasons.has(reason):
+		return
+	_reasons.erase(reason)
+	_sync_pause()
+
+
+## 清空全部原因（测试收尾 / 场景重置用）。
+func clear_pauses() -> void:
+	if _reasons.is_empty():
+		return
+	_reasons.clear()
+	_sync_pause()
+
+
+func pause_reasons() -> Array[String]:
+	var reasons: Array[String] = []
+	for reason: String in _reasons:
+		reasons.append(reason)
+	return reasons
+
+
+## 兼容旧调用：true = 加「手动」原因，false = 清空全部原因。
 func set_paused(value: bool) -> void:
-	is_paused = value
-	get_tree().paused = value
-	EventBus.game_paused.emit(value)
+	if value:
+		hold_pause(PAUSE_MANUAL)
+	else:
+		clear_pauses()
 
 
-## 切后台/来电：落盘 + 暂停。已经有别的暂停来源时只落盘，不重复暂停。
+## 切后台/来电：落盘 + 加「后台」原因。
 func pause_for_background() -> void:
 	GameSettings.save_to_disk()
-	if is_paused:
-		return
-	_background_paused = true
-	set_paused(true)
+	hold_pause(PAUSE_BACKGROUND)
 
 
-## 回到前台：只撤销自己加的那次暂停，设置面板等其它来源的暂停保持不变。
+## 回到前台：只释放「后台」这一个原因，设置面板等其它原因照旧保持暂停。
 func resume_from_background() -> void:
-	if not _background_paused:
-		return
-	_background_paused = false
-	set_paused(false)
+	release_pause(PAUSE_BACKGROUND)
 
 
 func is_background_paused() -> bool:
-	return _background_paused
+	return _reasons.has(PAUSE_BACKGROUND)
+
+
+## 只有状态真的变化时才写 get_tree().paused 并广播，避免重复事件打断战斗状态机。
+func _sync_pause() -> void:
+	var paused := not _reasons.is_empty()
+	if paused == is_paused:
+		return
+	is_paused = paused
+	get_tree().paused = paused
+	# 真机验收靠 logcat 判断切后台/回前台是否按预期暂停（发布构建不输出）。
+	if OS.is_debug_build():
+		print("[Pause] paused=%s reasons=%s" % [str(paused), str(pause_reasons())])
+	EventBus.game_paused.emit(paused)
 
 
 func _on_attack_requested() -> void:
