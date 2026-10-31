@@ -23,6 +23,9 @@ var world: SubViewport
 var loot_service: Node
 ## NPC 交互：先对话，再从对话里进商店（同一时间只允许一个面板）。
 var _dialogue_panel: Node = null
+## HUD 与点击选择器：验收要直接读到按钮配色与点选结果。
+var hud: Node = null
+var picker: Node = null
 var _shop_panel: Node = null
 
 ## 换图/读档后的短暂"传送免疫"，避免落点就在传送点上时立刻又被传走。
@@ -50,13 +53,14 @@ func _ready() -> void:
 	_build_loot_service()
 	_apply_camera_limits()
 	# 世界点击拾取：选中只改选中状态，攻击由 ATK 按钮/攻击键单独触发。
-	var picker := Node.new()
+	picker = Node.new()
 	picker.name = "TargetPicker"
 	picker.set_script(TARGET_PICKER)
 	add_child(picker)
 	picker.call("setup", world_view)
 
-	add_child(HUD_SCENE.instantiate())
+	hud = HUD_SCENE.instantiate()
+	add_child(hud)
 
 	DisplayAdapter.layout_changed.connect(_apply_layout)
 	_apply_layout()

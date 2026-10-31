@@ -58,10 +58,10 @@ func pick_at_world(world_position: Vector2) -> bool:
 		return false
 
 	var before = player.get_selected_target()
-	var enemy = _enemy_at(player, world_position)
+	var target = _target_at(player, world_position)
 	var selected := false
-	if is_instance_valid(enemy):
-		selected = player.select_target(enemy)
+	if is_instance_valid(target):
+		selected = player.select_target(target)
 	else:
 		player.clear_selection()
 
@@ -78,16 +78,31 @@ func _screen_to_world(screen_position: Vector2) -> Vector2:
 	return get_viewport().get_canvas_transform().affine_inverse() * screen_position
 
 
-## 命中优先级：判定框内离点击点最近的敌人（同屏、存活由 lock_targets() 保证）。
-func _enemy_at(player, world_position: Vector2):
+## 命中优先级：判定框内离点击点最近的目标。
+## 敌人与 NPC 同等参与（NPC 也能点选，选中后主操作变成「交互」）。
+func _target_at(player, world_position: Vector2):
 	var best = null
 	var best_distance := INF
 	for enemy: Node in player.lock_targets():
-		var local: Vector2 = world_position - enemy.global_position
-		if not HIT_BOX.has_point(local):
-			continue
-		var distance: float = local.length()
+		var distance := _hit_distance(enemy, world_position)
 		if distance < best_distance:
 			best = enemy
 			best_distance = distance
+	for npc: Node in player.get_tree().get_nodes_in_group("npcs"):
+		if not (npc is Node2D):
+			continue
+		var distance := _hit_distance(npc, world_position)
+		if distance < best_distance:
+			best = npc
+			best_distance = distance
 	return best
+
+
+## 命中返回点到目标脚底的距离，未命中返回 INF。
+func _hit_distance(node: Node, world_position: Vector2) -> float:
+	if not (node is Node2D):
+		return INF
+	var local: Vector2 = world_position - (node as Node2D).global_position
+	if not HIT_BOX.has_point(local):
+		return INF
+	return local.length()

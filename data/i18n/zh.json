@@ -81,6 +81,7 @@
   "action.attack": "攻击",
   "action.interact": "交互",
   "action.harvest": "采摘",
+  "action.too_far": "太远了，走近一点",
   "action.observe": "观察",
 
   "settings.title": "设置",

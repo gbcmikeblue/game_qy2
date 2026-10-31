@@ -26,6 +26,8 @@ var _disabled := false
 var _touch_index := -1
 ## 技能冷却进度（0 = 就绪，1 = 刚进入冷却），用环形覆盖表示。
 var _cooldown_ratio := 0.0
+## 主色：按当前操作类型变化（攻击红 / 交互绿 / 采集黄 / 观察蓝）。
+var _accent := Color(0.75, 0.28, 0.24)
 
 
 func _ready() -> void:
@@ -79,6 +81,18 @@ func cooldown_ratio() -> float:
 	return _cooldown_ratio
 
 
+## 按钮主色：背景随操作类型变化，让玩家不看文字也知道会做什么。
+func set_accent(color: Color) -> void:
+	if color.is_equal_approx(_accent):
+		return
+	_accent = color
+	queue_redraw()
+
+
+func accent() -> Color:
+	return _accent
+
+
 func _gui_input(event: InputEvent) -> void:
 	if _disabled:
 		return
@@ -123,7 +137,9 @@ func _release() -> void:
 func _draw() -> void:
 	var center := size * 0.5
 	var dim := 0.3 if _disabled else 1.0
-	var fill := Color(0.75, 0.28, 0.24, 0.55) if _held else Color(0.15, 0.15, 0.18, 0.45)
+	# 平时按主色淡铺底，按下时同一主色加深：换操作类型时整块背景跟着变色。
+	var fill := Color(_accent.r, _accent.g, _accent.b, 0.62) if _held \
+			else Color(_accent.r, _accent.g, _accent.b, 0.38)
 	if _disabled:
 		fill = Color(0.12, 0.12, 0.14, 0.25)
 	draw_circle(center, radius, fill)

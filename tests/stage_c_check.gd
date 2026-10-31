@@ -843,6 +843,37 @@ func _test_npc() -> void:
 	_check(hero.nearest_npc() == npc, "靠近后能定位到该 NPC")
 	_check(String(hero.get_selected_action_key()) == "action.interact",
 			"靠近后主操作变成交互（%s）" % hero.get_selected_action_key())
+
+	# 点选 NPC：与敌人共用同一套拾取器，选中后主操作变「交互」、按钮变绿
+	_check(game.picker.pick_at_world(npc.global_position + Vector2(0.0, -20.0)),
+			"点击 NPC 能选中它")
+	_check(hero.get_selected_target() == npc, "选中的就是该 NPC")
+	_check(String(hero.get_selected_action_key()) == "action.interact",
+			"选中 NPC 后主操作是交互（%s）" % hero.get_selected_action_key())
+	# HUD 在 _process 里刷新，选中发生在帧中：要等两帧才看得到结果（一帧只会读到上一帧状态）。
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check(game.hud.action_button_caption() == Locale.t("action.interact"),
+			"按钮文案变成「交互」（%s）" % game.hud.action_button_caption())
+	var interact_accent: Color = game.hud.action_button_accent()
+	_check(interact_accent.g > interact_accent.r,
+			"交互按钮偏绿（r=%.2f g=%.2f）" % [interact_accent.r, interact_accent.g])
+
+	# 取消选中且离开 NPC 交互范围 → 按钮回到攻击红
+	# （站在 NPC 旁边时即使不选中，主操作仍是交互，这是 B3 的既定行为）
+	hero.clear_selection()
+	hero.global_position = npc.global_position + Vector2(400.0, 0.0)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check(game.hud.action_button_caption() == Locale.t("action.attack"),
+			"远离 NPC 后文案回到「攻击」（%s）" % game.hud.action_button_caption())
+	var attack_accent: Color = game.hud.action_button_accent()
+	_check(attack_accent.r > attack_accent.g,
+			"攻击按钮偏红（r=%.2f g=%.2f）" % [attack_accent.r, attack_accent.g])
+
+	# 回到 NPC 旁边再按主操作（走「没有选中目标 → 就近交互」这条路径）
+	hero.global_position = npc.global_position + Vector2(20.0, 0.0)
+	await get_tree().physics_frame
 	hero.perform_action()
 	_check(kinds.size() == 1 and String(kinds[0]) == "npc", "按主操作发出 npc 交互请求")
 

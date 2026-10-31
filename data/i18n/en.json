@@ -81,6 +81,7 @@
   "action.attack": "ATTACK",
   "action.interact": "INTERACT",
   "action.harvest": "HARVEST",
+  "action.too_far": "Too far, get closer",
   "action.observe": "OBSERVE",
 
   "settings.title": "SETTINGS",

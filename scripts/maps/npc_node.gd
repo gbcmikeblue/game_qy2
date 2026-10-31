@@ -12,6 +12,9 @@ const BODY_COLOR := Color(0.55, 0.42, 0.30)
 const HEAD_COLOR := Color(0.88, 0.74, 0.58)
 const PAD_COLOR := Color(0.20, 0.30, 0.26, 0.75)
 const NAME_COLOR := Color(0.92, 0.92, 0.86, 0.9)
+## 选中光环颜色（与「交互」绿色一致）。
+const LOCK_COLOR := Color(0.35, 0.85, 0.48, 0.95)
+var _locked := false
 
 var kind := "npc"
 ## 交互时打开的商店 id（对应 data/items/shop/*.tres）。
@@ -66,9 +69,28 @@ func is_player_near() -> bool:
 	return global_position.distance_to(player.global_position) <= INTERACT_RADIUS
 
 
+## NPC 永远「存活」：让它能进入与敌人同一套选中/主操作分发流程。
+func is_alive() -> bool:
+	return true
+
+
+## 选中高亮：与敌人同一套视觉语言（脚下光环），玩家一眼看出点到了谁。
+func set_locked(locked: bool) -> void:
+	if _locked == locked:
+		return
+	_locked = locked
+	queue_redraw()
+
+
+func is_locked() -> bool:
+	return _locked
+
+
 func _draw() -> void:
 	# 地台 + 身体 + 头 + 名字：全部程序化，接入正式美术时只换这个函数。
 	draw_circle(Vector2(0.0, 0.0), 20.0, PAD_COLOR)
+	if _locked:
+		draw_arc(Vector2(0.0, 0.0), 24.0, 0.0, TAU, 32, LOCK_COLOR, 2.5, true)
 	draw_rect(Rect2(-8.0, -28.0, 16.0, 22.0), BODY_COLOR, true)
 	draw_circle(Vector2(0.0, -34.0), 8.0, HEAD_COLOR)
 	if not is_player_near():

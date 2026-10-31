@@ -86,7 +86,8 @@ var _respawn_left := 0.0
 var _dead := false
 
 ## 当前选中的目标（等价于旧版本的"锁定目标"）。
-var _locked: EnemyController = null
+## 选中目标：可以是敌人，也可以是 NPC（只要有 is_alive()/get_target_kind()）。
+var _locked: Node2D = null
 
 var _path: Array[Vector2i] = []
 var _path_index := 0
@@ -378,28 +379,30 @@ func is_position_locked_view(world_position: Vector2, margin: float) -> bool:
 # ---------------- 选中目标 ----------------
 
 ## 当前选中的目标（无效时返回 null）。
-func get_selected_target() -> EnemyController:
+func get_selected_target() -> Node2D:
 	if _has_valid_lock():
 		return _locked
 	return null
 
 
 ## 旧名保留，便于既有调用点与工具脚本平滑迁移。
-func get_locked_target() -> EnemyController:
+func get_locked_target() -> Node2D:
 	return get_selected_target()
 
 
 ## 点击/点触选中：只改选中状态与高亮，绝不触发攻击。
-## 目标必须存活且脚底在当前可见安全矩形内，否则返回 false。
+## 目标可以是敌人，也可以是 NPC（NpcNode 的 is_alive 恒为 true）。
 ## from_aggro=true 表示由"被攻击接管"驱动，此时不清除仇恨锁。
-func select_target(enemy: EnemyController, from_aggro := false) -> bool:
-	if _dead or not is_instance_valid(enemy) or not enemy.is_alive():
+func select_target(target: Node2D, from_aggro := false) -> bool:
+	if _dead or target == null or not is_instance_valid(target):
 		return false
-	if not is_position_locked_view(enemy.global_position, lock_screen_margin):
+	if target.has_method("is_alive") and not target.is_alive():
+		return false
+	if not is_position_locked_view(target.global_position, lock_screen_margin):
 		return false
 	if not from_aggro:
 		clear_aggro_latch()
-	_set_locked_target(enemy)
+	_set_locked_target(target)
 	return true
 
 
@@ -487,7 +490,7 @@ func perform_action() -> int:
 
 	if not _has_valid_lock():
 		_set_locked_target(null)
-		# 没有战斗目标时：靠近 NPC 按主操作即交互（NPC 不进锁定系统）。
+		# 没有选中目标时：靠近 NPC 也能直接交互，省一次点击。
 		var npc := nearest_npc()
 		if npc != null:
 			cancel_auto_approach()
@@ -497,22 +500,28 @@ func perform_action() -> int:
 		return 0
 
 	var target := _locked
-	if global_position.distance_to(target.global_position) > attack_range:
-		# 目标在攻击距离外：这次按键表示"走过去"，开启自动接近、不消耗冷却。
-		_approach_enabled = true
-		_reset_approach_state()
+	var kind := "monster"
+	if target.has_method("get_target_kind"):
+		kind = target.get_target_kind()
+	var action_key := DataRegistry.get_interaction_action(kind)
+	# 战斗目标按攻击距离；交互类目标按交互半径（两者不同，不能混用）。
+	var reach := attack_range if action_key == "action.attack" else INTERACT_RADIUS
+	if global_position.distance_to(target.global_position) > reach:
+		if action_key == "action.attack":
+			# 目标在攻击距离外：这次按键表示"走过去"，开启自动接近、不消耗冷却。
+			_approach_enabled = true
+			_reset_approach_state()
+		else:
+			CombatFx.show_text(global_position + Vector2(0.0, -40.0), Locale.t("action.too_far"),
+					Color(0.85, 0.85, 0.7))
 		return 0
 
 	if _cooldown_left > 0.0:
 		return 0
 
 	_cooldown_left = attack_cooldown
-	var kind := "monster"
-	if target.has_method("get_target_kind"):
-		kind = target.get_target_kind()
-	var action_key := DataRegistry.get_interaction_action(kind)
 	if action_key == "action.attack":
-		return _resolve_attack(target)
+		return _resolve_attack(target as EnemyController)
 
 	EventBus.target_action_requested.emit(kind, target)
 	CombatFx.show_text(target.global_position, Locale.t(action_key), INTERACT_COLOR)
@@ -720,6 +729,9 @@ func get_aggro_latch() -> EnemyController:
 func _should_auto_approach() -> bool:
 	if not auto_approach or _approach_stalled or not _approach_enabled:
 		return false
+	# 只有战斗目标才自动接近：选中 NPC 时不该冲上去。
+	if not (_locked is EnemyController):
+		return false
 	if not _has_valid_lock():
 		return false
 	return global_position.distance_to(_locked.global_position) > attack_range * approach_stop_ratio
@@ -804,15 +816,20 @@ func _turn_towards(point: Vector2, delta: float) -> void:
 		_visual.set_facing(_facing)
 
 
+## 有效目标：实例有效 + 若它提供 is_alive() 则必须存活（NPC 恒为 true）。
 func _has_valid_lock() -> bool:
-	return is_instance_valid(_locked) and _locked.is_alive()
+	if not is_instance_valid(_locked):
+		return false
+	if _locked.has_method("is_alive"):
+		return _locked.is_alive()
+	return true
 
 
 ## 取消选中条件：目标死亡，或目标移出视口（用更宽松的释放边距，避免贴边抖动）。
 func _drop_invalid_lock() -> void:
 	if _locked == null:
 		return
-	if not is_instance_valid(_locked) or not _locked.is_alive():
+	if not _has_valid_lock():
 		_set_locked_target(null)
 		return
 	if not is_position_locked_view(_locked.global_position, lock_release_margin):
@@ -820,14 +837,15 @@ func _drop_invalid_lock() -> void:
 
 
 ## 设置选中目标（只处理状态与高亮，不涉及任何攻击逻辑）。
-func _set_locked_target(enemy: EnemyController) -> void:
-	if _locked != enemy:
+## 参数是 Node2D：敌人与 NPC 共用同一套选中/高亮/主操作分发。
+func _set_locked_target(target: Node2D) -> void:
+	if _locked != target:
 		cancel_auto_approach()
-	if _locked == enemy:
+	if _locked == target:
 		return
 	if is_instance_valid(_locked) and _locked.has_method("set_locked"):
 		_locked.set_locked(false)
-	_locked = enemy
+	_locked = target
 	if is_instance_valid(_locked) and _locked.has_method("set_locked"):
 		_locked.set_locked(true)
 	_reset_approach_state()

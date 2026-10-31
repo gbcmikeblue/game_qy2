@@ -27,6 +27,16 @@ const INVENTORY_PANEL := preload("res://scenes/ui/inventory_panel.tscn")
 @onready var _hint_label: Label = $HintLabel
 @onready var _quest_label: Label = $QuestLabel
 
+## 主操作按钮配色：按操作类型换色，玩家不看文字也知道会做什么。
+const ACTION_COLORS := {
+	"action.attack": Color(0.78, 0.25, 0.22),
+	"action.interact": Color(0.24, 0.62, 0.36),
+	"action.harvest": Color(0.72, 0.55, 0.20),
+	"action.observe": Color(0.28, 0.48, 0.72),
+}
+const ACTION_COLOR_FALLBACK := Color(0.36, 0.36, 0.44)
+## 技能按钮固定蓝色，与主操作区分开。
+const SKILL_COLOR := Color(0.30, 0.44, 0.70)
 var _lock_line := ""
 var _panel: Node = null
 var _action_key := ""
@@ -173,6 +183,8 @@ func _build_skill_buttons() -> void:
 		else:
 			button = _make_extra_skill_button(index)
 		button.skill_id = String(def.get("id", ""))
+		# 技能按钮统一蓝色，与主操作（攻击红 / 交互绿）区分。
+		button.set_accent(SKILL_COLOR)
 		button.visible = true
 		_skill_buttons.append(button)
 	# 表里的技能比槽位少时，多余的槽位隐藏（不留空白热区）。
@@ -245,12 +257,22 @@ func _refresh_texts() -> void:
 
 ## 主操作按钮文案：由当前选中目标的类型决定，未选中时回退为"攻击"。
 ## 文案 key 变化时同步刷新底部提示，避免按钮与提示不一致。
+## 验收用：主操作按钮当前的主色与文案。
+func action_button_accent() -> Color:
+	return _attack_button.accent()
+
+
+func action_button_caption() -> String:
+	return _attack_button.caption
+
+
 func _update_action_button() -> void:
 	var key := "action.attack"
 	var player := GameManager.player
 	if is_instance_valid(player) and player.has_method("get_selected_action_key"):
 		key = player.get_selected_action_key()
 	_attack_button.set_caption(Locale.t(key))
+	_attack_button.set_accent(ACTION_COLORS.get(key, ACTION_COLOR_FALLBACK))
 	if key != _action_key:
 		_action_key = key
 		_update_hint()
