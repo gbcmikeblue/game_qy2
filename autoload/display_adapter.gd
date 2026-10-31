@@ -362,16 +362,18 @@ const TEXT_ROLES := {
 
 
 ## 角色名 → 逻辑像素（dp 已含 dpi / content_scale / ui_scale）。
+## dp 是可读性下限，换算出的像素必须向上取整：四舍五入会把下限吃掉
+## （294dpi 下 helper 的 12dp = 22.05px，roundi 成 22px 反算只有 11.97dp，低于下限）。
 func text_px(role: String) -> int:
 	var spec: Dictionary = TEXT_ROLES.get(role, TEXT_ROLES["body"])
-	return maxi(int(spec["px"]), roundi(dp(float(spec["dp"]))))
+	return maxi(int(spec["px"]), ceili(dp(float(spec["dp"]))))
 
 
 ## 同上，但不吃 ui_scale（调试信息这类不参与界面缩放的元素用）。
 func text_px_fixed(role: String) -> int:
 	var spec: Dictionary = TEXT_ROLES.get(role, TEXT_ROLES["body"])
 	var scaled := dp_to_ui(float(spec["dp"]), dpi, content_scale, 1.0)
-	return maxi(int(spec["px"]), roundi(scaled))
+	return maxi(int(spec["px"]), ceili(scaled))
 
 
 ## 触控热区补偿：把矩形外扩到物理尺寸不小于 min_dp（逻辑单位，按当前 dpi/content_scale 换算）。
