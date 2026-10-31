@@ -123,6 +123,10 @@
 
   "button.inventory": "BAG",
   "button.skill": "SKILL",
+  "button.skill.heavy": "SMASH",
+  "button.skill.whirlwind": "WHIRL",
+  "skill.no_target": "No enemy nearby",
+  "skill.whirlwind_hits": "Whirlwind x%d",
   "hud.hp_mp": "HP %d/%d   MP %d/%d",
   "skill.no_mp": "Not enough MP",
   "skill.cooling": "Cooling down",

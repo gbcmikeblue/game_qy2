@@ -21,6 +21,7 @@ const INVENTORY_PANEL := preload("res://scenes/ui/inventory_panel.tscn")
 @onready var _hp_label: Label = $HpLabel
 @onready var _attack_button = $AttackButton
 @onready var _skill_button = $SkillButton
+@onready var _skill2_button = $Skill2Button
 @onready var _settings_button: UiButton = $SettingsButton
 @onready var _inventory_button: UiButton = $InventoryButton
 @onready var _hint_label: Label = $HintLabel
@@ -152,14 +153,21 @@ func _update_skill_button() -> void:
 	var player := GameManager.player
 	if not is_instance_valid(player) or not player.has_method("get_skill_cooldown_left"):
 		return
-	var total := maxf(0.001, float(player.skill_cooldown))
-	_skill_button.set_cooldown(clampf(float(player.get_skill_cooldown_left()) / total, 0.0, 1.0))
+	_skill_button.set_cooldown(_cooldown_ratio_of(player, "heavy_strike"))
+	_skill2_button.set_cooldown(_cooldown_ratio_of(player, "whirlwind"))
+
+
+## 单个技能的冷却比例（0..1），两个技能按钮共用。
+func _cooldown_ratio_of(player: Node, skill_id: String) -> float:
+	var total := maxf(0.001, float(player.get_skill_cooldown_total(skill_id)))
+	return clampf(float(player.get_skill_cooldown_left(skill_id)) / total, 0.0, 1.0)
 
 
 func _update_interaction_gate() -> void:
 	_attack_button.set_disabled(GameManager.is_paused)
 	if _skill_button != null:
 		_skill_button.set_disabled(GameManager.is_paused)
+		_skill2_button.set_disabled(GameManager.is_paused)
 
 
 func _process(_delta: float) -> void:
@@ -178,7 +186,8 @@ func _on_texts_changed(_arg: Variant = null) -> void:
 func _refresh_texts() -> void:
 	_settings_button.set_caption(Locale.t("button.settings"))
 	_inventory_button.set_caption(Locale.t("button.inventory"))
-	_skill_button.set_caption(Locale.t("button.skill"))
+	_skill_button.set_caption(Locale.t("button.skill.heavy"))
+	_skill2_button.set_caption(Locale.t("button.skill.whirlwind"))
 	_update_action_button()
 	_update_hint()
 

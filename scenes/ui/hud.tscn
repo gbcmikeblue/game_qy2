@@ -49,6 +49,23 @@ script = ExtResource("3_btn")
 radius = 48.0
 caption = "SKILL"
 action = "skill"
+skill_id = "heavy_strike"
+
+[node name="Skill2Button" type="Control" parent="."]
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -344.0
+offset_top = -330.0
+offset_right = -208.0
+offset_bottom = -194.0
+mouse_filter = 0
+script = ExtResource("3_btn")
+radius = 48.0
+caption = "AOE"
+action = "skill"
+skill_id = "whirlwind"
 
 [node name="SettingsButton" type="Control" parent="."]
 anchor_left = 1.0

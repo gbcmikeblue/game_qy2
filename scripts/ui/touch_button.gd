@@ -17,6 +17,8 @@ const MIN_TOUCH_DP := 44.0
 @export var caption := "ATK"
 ## 按钮动作：attack = 主操作；skill = 技能（只在抬起时广播一次 skill_requested）。
 @export var action := "attack"
+## 技能按钮发出的技能 id（action == "skill" 时生效）。
+@export var skill_id := "heavy_strike"
 
 var _held := false
 var _disabled := false
@@ -113,7 +115,7 @@ func _release() -> void:
 	_touch_index = -1
 	queue_redraw()
 	if action == "skill":
-		EventBus.skill_requested.emit("heavy_strike")
+		EventBus.skill_requested.emit(skill_id)
 	else:
 		EventBus.attack_requested.emit()
 

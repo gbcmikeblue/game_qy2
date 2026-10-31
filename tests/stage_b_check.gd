@@ -51,7 +51,10 @@ func _ready() -> void:
 
 	_test_combat_math()
 	_test_combat_service()
-	_test_skill()
+	# 这两个用例内部有 await：必须 await 调用，否则协程会与下一个用例交错，
+	# 上一个用例的攻击会打进下一个用例的帧里（排查过一次，很难看出来）。
+	await _test_skill()
+	await _test_whirlwind()
 	_test_health_component()
 	_test_pathfinding()
 	await _test_fsm()
@@ -222,6 +225,57 @@ func _test_skill() -> void:
 
 	_player.mp = _player.max_mp
 	_player._skill_cd_left = 0.0
+
+
+## 旋风斩（AoE）：多目标同时结算、独立冷却、无目标不扣蓝。
+func _test_whirlwind() -> void:
+	_clear_enemies()
+	await get_tree().physics_frame
+	await _ensure_player_alive()
+	_player.global_position = _map.spawn_world_position()
+	_player.velocity = Vector2.ZERO
+	_player.crit_rate = 0.0
+	InputManager.touch_vector = Vector2.ZERO
+	await get_tree().physics_frame
+
+	var near1 = _spawn_static_enemy(Vector2(40.0, 0.0))
+	var near2 = _spawn_static_enemy(Vector2(-40.0, 20.0))
+	var far = _spawn_static_enemy(Vector2(300.0, 0.0))
+	await get_tree().physics_frame
+
+	_player.mp = _player.max_mp
+	_player._whirlwind_cd_left = 0.0
+	var heavy_cd_before: float = _player.get_skill_cooldown_left("heavy_strike")
+	var hp1: int = near1.get_hp()
+	var hp2: int = near2.get_hp()
+	var hp_far: int = far.get_hp()
+
+	_check(_player.try_skill("whirlwind") == 1, "旋风斩施放返回 1")
+	_check(near1.get_hp() < hp1 and near2.get_hp() < hp2,
+			"半径内两只怪同时掉血（%d / %d）" % [hp1 - near1.get_hp(), hp2 - near2.get_hp()])
+	_check(far.get_hp() == hp_far, "半径外的怪不掉血")
+	_check(_player.get_mp() == _player.max_mp - _player.whirlwind_mp_cost,
+			"扣除旋风斩魔法（余 %d）" % _player.get_mp())
+	_check(_player.get_skill_cooldown_left("whirlwind") > 0.0, "旋风斩进入冷却")
+	_check(is_equal_approx(_player.get_skill_cooldown_left("heavy_strike"), heavy_cd_before),
+			"重击的冷却不受旋风斩影响（%.2f → %.2f）"
+					% [heavy_cd_before, _player.get_skill_cooldown_left("heavy_strike")])
+
+	var mp_after: int = _player.get_mp()
+	_check(_player.try_skill("whirlwind") == 0, "冷却中旋风斩返回 0")
+	_check(_player.get_mp() == mp_after, "冷却中不扣蓝")
+
+	# 半径内没有敌人：不扣蓝、不进冷却
+	_clear_enemies()
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	_player._whirlwind_cd_left = 0.0
+	var mp_before: int = _player.get_mp()
+	_check(_player.try_skill("whirlwind") == 0, "附近没有敌人时返回 0")
+	_check(_player.get_mp() == mp_before, "无目标不扣蓝")
+	_check(_player.get_skill_cooldown_left("whirlwind") == 0.0, "无目标不进冷却")
+
+	_player.mp = _player.max_mp
 
 
 func _test_health_component() -> void:

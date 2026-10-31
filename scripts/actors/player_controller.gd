@@ -46,6 +46,12 @@ var skill_mp_cost := 10
 var skill_cooldown := 3.0
 var skill_multiplier := 2.2
 var _skill_cd_left := 0.0
+## 旋风斩（AoE）参数与独立冷却。
+var whirlwind_mp_cost := 15
+var whirlwind_cooldown := 6.0
+var whirlwind_multiplier := 1.4
+var whirlwind_radius := 84.0
+var _whirlwind_cd_left := 0.0
 var _mp_frac := 0.0
 var attack := 20.0
 var defense := 5.0
@@ -218,13 +224,29 @@ func get_mp() -> int:
 	return mp
 
 
-func get_skill_cooldown_left() -> float:
+func get_skill_cooldown_left(skill_id: String = "heavy_strike") -> float:
+	if skill_id == "whirlwind":
+		return _whirlwind_cd_left
 	return _skill_cd_left
 
 
-## 主动技能：重击。消耗 MP、有冷却，伤害为普攻的 skill_multiplier 倍。
+## 冷却总时长（HUD 用来算环形比例）。
+func get_skill_cooldown_total(skill_id: String = "heavy_strike") -> float:
+	if skill_id == "whirlwind":
+		return whirlwind_cooldown
+	return skill_cooldown
+
+
+## 技能入口：按 id 分发。UI 通过 skill_requested(skill_id) 传入，默认重击。
+func try_skill(skill_id: String = "heavy_strike") -> int:
+	if skill_id == "whirlwind":
+		return _try_whirlwind()
+	return _try_heavy_strike()
+
+
+## 主动技能：重击（单体，需锁定目标）。消耗 MP、有冷却，伤害为普攻的 multiplier 倍。
 ## 冷却与 MP 的判定放在真正结算之前，失败不扣蓝也不进冷却。
-func try_skill() -> int:
+func _try_heavy_strike() -> int:
 	if _dead or not _has_valid_lock():
 		return 0
 	var target := _locked
@@ -256,9 +278,66 @@ func try_skill() -> int:
 	return 1
 
 
+## 旋风斩：不需锁定，命中半径内所有敌人（伤害低于重击，冷却更长）。
+## 全部被拒绝（无敌帧/已死）时不扣蓝也不进冷却，与重击保持一致。
+func _try_whirlwind() -> int:
+	if _dead:
+		return 0
+	if _whirlwind_cd_left > 0.0:
+		CombatFx.show_text(global_position + Vector2(0.0, -44.0), Locale.t("skill.cooling"),
+				Color(0.75, 0.75, 0.85))
+		return 0
+	if mp < whirlwind_mp_cost:
+		CombatFx.show_text(global_position + Vector2(0.0, -44.0), Locale.t("skill.no_mp"),
+				Color(0.55, 0.65, 0.95))
+		return 0
+
+	var targets := enemies_in_radius(whirlwind_radius)
+	if targets.is_empty():
+		CombatFx.show_text(global_position + Vector2(0.0, -44.0), Locale.t("skill.no_target"),
+				Color(0.75, 0.75, 0.85))
+		return 0
+
+	var hits := 0
+	for target: Node in targets:
+		var result := CombatService.strike(self, target, {
+			"attack": attack * whirlwind_multiplier,
+			"crit_rate": crit_rate,
+			"crit_damage": crit_damage,
+			"rng": _rng,
+			"max_range": whirlwind_radius,
+			"show_damage_fx": true,
+		})
+		if bool(result["hit"]):
+			hits += 1
+	if hits == 0:
+		return 0
+
+	mp -= whirlwind_mp_cost
+	_whirlwind_cd_left = whirlwind_cooldown
+	CombatFx.show_text(global_position + Vector2(0.0, -56.0),
+			Locale.t("skill.whirlwind_hits", [hits]), Color(1.0, 0.85, 0.55))
+	return 1
+
+
+## 半径内存活的敌人（AoE 用；不依赖锁定）。
+func enemies_in_radius(radius: float) -> Array[Node]:
+	var out: Array[Node] = []
+	for node: Node in get_tree().get_nodes_in_group("enemies"):
+		if not (node is EnemyController):
+			continue
+		var enemy := node as EnemyController
+		if not enemy.is_alive():
+			continue
+		if global_position.distance_to(enemy.global_position) <= radius:
+			out.append(enemy)
+	return out
+
+
 ## 魔法回复：死亡时不回；累计小数部分，够 1 点才进位（避免每帧截断导致永远回不满）。
 func _tick_mp(delta: float) -> void:
 	_skill_cd_left = maxf(0.0, _skill_cd_left - delta)
+	_whirlwind_cd_left = maxf(0.0, _whirlwind_cd_left - delta)
 	if _dead or mp >= max_mp:
 		return
 	_mp_frac += mp_regen * delta
@@ -797,6 +876,10 @@ func _apply_def() -> void:
 	skill_mp_cost = int(def.get("skill_mp_cost", skill_mp_cost))
 	skill_cooldown = float(def.get("skill_cooldown", skill_cooldown))
 	skill_multiplier = float(def.get("skill_multiplier", skill_multiplier))
+	whirlwind_mp_cost = int(def.get("whirlwind_mp_cost", whirlwind_mp_cost))
+	whirlwind_cooldown = float(def.get("whirlwind_cooldown", whirlwind_cooldown))
+	whirlwind_multiplier = float(def.get("whirlwind_multiplier", whirlwind_multiplier))
+	whirlwind_radius = float(def.get("whirlwind_radius", whirlwind_radius))
 	auto_approach = bool(def.get("auto_approach", auto_approach))
 	approach_stop_ratio = float(def.get("approach_stop_ratio", approach_stop_ratio))
 	# 持续攻击与仇恨锁的设计默认值（用户可在设置里覆盖前两项）。
@@ -823,10 +906,11 @@ func _on_attack_pressed() -> void:
 	_ui_attack_held = true
 
 
-func _on_skill_requested(_skill_id: String) -> void:
+func _on_skill_requested(skill_id: String) -> void:
 	# 技能按钮同样打断自动接近与持续攻击，然后尝试施放。
 	cancel_auto_approach()
 	cancel_auto_attack()
+	try_skill(skill_id)
 	try_skill()
 
 

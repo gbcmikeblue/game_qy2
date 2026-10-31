@@ -123,6 +123,10 @@
 
   "button.inventory": "背包",
   "button.skill": "技能",
+  "button.skill.heavy": "重击",
+  "button.skill.whirlwind": "旋风",
+  "skill.no_target": "附近没有敌人",
+  "skill.whirlwind_hits": "旋风斩 %d 连击",
   "hud.hp_mp": "生命 %d/%d   魔法 %d/%d",
   "skill.no_mp": "魔法不足",
   "skill.cooling": "冷却中",
