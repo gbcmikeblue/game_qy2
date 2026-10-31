@@ -47,6 +47,7 @@ func _ready() -> void:
 	await _test_kill_to_inventory()
 	await _test_equipment_affects_player()
 	await _test_inventory_panel()
+	await _test_shop()
 	InventoryService.reset()
 	_report()
 
@@ -421,6 +422,71 @@ func _test_inventory_panel() -> void:
 	GameManager.player = null
 	remove_child(hero)
 	hero.queue_free()
+	panel.close_panel()
+	await get_tree().process_frame
+	InventoryService.reset()
+
+
+# ---------------- 18–19. 商店：买入 / 卖出 / 金币不足 / 包满 ----------------
+
+func _test_shop() -> void:
+	InventoryService.reset()
+	var panel = INVENTORY_PANEL.instantiate()
+	add_child(panel)
+	await get_tree().process_frame
+	panel.switch_tab_to(2)
+	_check(panel.current_tab() == 2, "可以切到商店页签")
+
+	var shop := ItemRegistry.default_shop()
+	_check(shop != null and not shop.stock.is_empty(), "存在默认商店且货架非空")
+	if shop == null or shop.stock.is_empty():
+		panel.close_panel()
+		return
+	_check(panel.shop_buy_row_count() == shop.stock.size(),
+			"买入列行数 = 货架商品数（%d / %d）" % [panel.shop_buy_row_count(), shop.stock.size()])
+
+	# panel 是 Node（instantiate 返回类型未知），必须显式标注，否则 Variant 推断会被当错误。
+	var first_id: StringName = panel.buy_row_item_id(0)
+	var def := ItemRegistry.get_item(first_id)
+
+	# 1) 金币不足：金币与背包都不变，并给出提示
+	InventoryService.gold = 0
+	var count_before := InventoryService.count_of(first_id)
+	panel.press_buy_row(0)
+	_check(InventoryService.gold == 0 and InventoryService.count_of(first_id) == count_before,
+			"金币不足时买入不改动金币与背包")
+	_check(panel.hint_text() == Locale.t("inv.coins_not_enough"), "提示「金币不足」")
+
+	# 2) 金币刚好够：扣钱 + 入包
+	InventoryService.gold = def.value
+	panel.press_buy_row(0)
+	_check(InventoryService.gold == 0, "买入后扣掉对应金币（余 %d）" % InventoryService.gold)
+	_check(InventoryService.count_of(first_id) == count_before + 1, "买入后物品进背包")
+
+	# 3) 卖出：半价加金币、物品减少
+	var price := InventoryService.sell_price(first_id)
+	var sell_index := -1
+	for i in panel.shop_sell_row_count():
+		if panel.sell_row_item_id(i) == first_id:
+			sell_index = i
+			break
+	_check(sell_index >= 0, "卖出列能定位到刚买入的物品")
+	panel.press_sell_row(sell_index)
+	_check(InventoryService.gold == price, "卖出按半价加金币（+%d）" % price)
+	_check(InventoryService.count_of(first_id) == count_before, "卖出后物品数量回落")
+	_check(price == def.value / 2, "卖出价 = 基准价一半（%d / %d）" % [price, def.value])
+
+	# 4) 包满：金币充足也买不进，且不扣钱
+	InventoryService.reset()
+	InventoryService.capacity = 1
+	InventoryService.add_item(&"wep_iron_axe", 1)
+	InventoryService.gold = 999
+	var bought_before := InventoryService.count_of(first_id)
+	panel.press_buy_row(0)
+	_check(InventoryService.count_of(first_id) == bought_before, "包满时买入不入包")
+	_check(InventoryService.gold == 999, "包满时买入不扣金币（余 %d）" % InventoryService.gold)
+
+	InventoryService.capacity = 24
 	panel.close_panel()
 	await get_tree().process_frame
 	InventoryService.reset()

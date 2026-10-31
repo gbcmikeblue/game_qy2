@@ -20,6 +20,7 @@ const FONT_HELPER := 17
 
 const CONTENT_RECT := Rect2(20.0, 116.0, 680.0, 314.0)
 const ROW_HEIGHT := 52.0
+const SHOP_ROW_HEIGHT := 44.0
 const ROW_WIDTH := 660.0
 const ICON_SIZE := 34.0
 ## 槽位文案 key 前缀：用拼接而不是模板串，否则 i18n 验收会把 "inv.slot.%s" 当成缺失词条。
@@ -35,6 +36,7 @@ var _panel: ColorRect
 var _title: Label
 var _bag_tab: UiButton
 var _equip_tab: UiButton
+var _shop_tab: UiButton
 var _content: Control
 var _bag_page: Control
 var _equip_page: Control
@@ -45,11 +47,19 @@ var _capacity_label: Label
 var _hint: Label
 var _close_button: UiButton
 var _stats_label: Label
+var _shop_page: Control
+var _buy_rows: Control
+var _sell_rows: Control
+var _buy_header: Label
+var _sell_header: Label
 
 var _tab := 0
 var _hint_left := 0.0
 ## 背包行与物品 id 的对应关系（验收脚本按 id 找行，不依赖顺序）。
 var _row_items: Array[StringName] = []
+## 商店两列的行 → 物品 id 映射。
+var _buy_items: Array[StringName] = []
+var _sell_items: Array[StringName] = []
 
 
 func _ready() -> void:
@@ -103,6 +113,8 @@ func _build() -> void:
 	_bag_tab.pressed.connect(_switch_tab.bind(0))
 	_equip_tab = _button(_panel, Vector2(182.0, 62.0), Vector2(150.0, 40.0))
 	_equip_tab.pressed.connect(_switch_tab.bind(1))
+	_shop_tab = _button(_panel, Vector2(340.0, 62.0), Vector2(150.0, 40.0))
+	_shop_tab.pressed.connect(_switch_tab.bind(2))
 
 	_content = Control.new()
 	_content.position = CONTENT_RECT.position
@@ -112,6 +124,7 @@ func _build() -> void:
 
 	_build_bag_page()
 	_build_equip_page()
+	_build_shop_page()
 
 	_gold_label = _label(Vector2(24.0, 440.0), Vector2(190.0, 34.0), FONT_BODY, _panel)
 	_capacity_label = _label(Vector2(220.0, 440.0), Vector2(220.0, 34.0), FONT_BODY, _panel)
@@ -148,6 +161,39 @@ func _build_equip_page() -> void:
 	_content.add_child(_equip_page)
 
 
+## 商店页签：左买右卖，两列各自滚动。买卖校验都在 InventoryService 里，
+## 这里只负责把失败原因翻译成提示，不重复判断。
+func _build_shop_page() -> void:
+	_shop_page = Control.new()
+	_shop_page.size = CONTENT_RECT.size
+	_shop_page.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_shop_page.visible = false
+	_content.add_child(_shop_page)
+
+	_buy_header = _label(Vector2(8.0, 0.0), Vector2(300.0, 26.0), FONT_HELPER, _shop_page)
+	_sell_header = _label(Vector2(358.0, 0.0), Vector2(300.0, 26.0), FONT_HELPER, _shop_page)
+
+	_buy_rows = _make_shop_column(_shop_page, 0.0)
+	_sell_rows = _make_shop_column(_shop_page, 350.0)
+
+
+func _make_shop_column(parent: Control, x: float) -> Control:
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(x, 30.0)
+	scroll.size = Vector2(320.0, CONTENT_RECT.size.y - 30.0)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	scroll.scroll_deadzone = 8
+	parent.add_child(scroll)
+
+	var rows := Control.new()
+	rows.custom_minimum_size = scroll.size
+	rows.size = scroll.size
+	rows.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	scroll.add_child(rows)
+	return rows
+
+
 # ---------------- 布局与文案 ----------------
 
 func _layout() -> void:
@@ -174,15 +220,20 @@ func _refresh_texts() -> void:
 	_title.text = Locale.t("inv.title")
 	_bag_tab.set_caption(Locale.t("inv.tab.bag"))
 	_equip_tab.set_caption(Locale.t("inv.tab.equip"))
+	_shop_tab.set_caption(Locale.t("inv.tab.shop"))
 	_close_button.set_caption(Locale.t("inv.close"))
+	_buy_header.text = Locale.t("inv.shop.buy")
+	_sell_header.text = Locale.t("inv.shop.sell")
 	_bag_tab.set_highlight(_tab == 0)
 	_equip_tab.set_highlight(_tab == 1)
+	_shop_tab.set_highlight(_tab == 2)
 
 
 func _refresh_all() -> void:
 	_refresh_texts()
 	_rebuild_bag()
 	_rebuild_equip()
+	_rebuild_shop()
 	_refresh_footer()
 
 
@@ -332,12 +383,89 @@ func _on_unequip_pressed(slot: String) -> void:
 		_show_hint(Locale.t("inventory.full"))
 
 
+# ---------------- 商店页签 ----------------
+
+func _rebuild_shop() -> void:
+	_buy_items.clear()
+	_sell_items.clear()
+	for child: Node in _buy_rows.get_children():
+		_buy_rows.remove_child(child)
+		child.queue_free()
+	for child: Node in _sell_rows.get_children():
+		_sell_rows.remove_child(child)
+		child.queue_free()
+
+	var min_height := CONTENT_RECT.size.y - 30.0
+	var buy_index := 0
+	var shop := ItemRegistry.default_shop()
+	if shop != null:
+		for def: ItemData in shop.stock:
+			if def == null:
+				continue
+			_buy_items.append(def.id)
+			var row := _shop_row(_buy_rows, buy_index,
+					"%s    %s" % [Locale.t(def.name_key), _price_text(def.value)])
+			row.pressed.connect(_on_buy_pressed.bind(def.id))
+			buy_index += 1
+	_buy_rows.custom_minimum_size = Vector2(320.0, maxf(min_height, float(buy_index) * SHOP_ROW_HEIGHT))
+	_buy_rows.size = _buy_rows.custom_minimum_size
+
+	var sell_index := 0
+	for entry: Dictionary in InventoryService.items:
+		var item_id: StringName = entry["id"]
+		var def := ItemRegistry.get_item(item_id)
+		if def == null:
+			continue
+		_sell_items.append(item_id)
+		var row := _shop_row(_sell_rows, sell_index,
+				"%s    %s" % [Locale.t(def.name_key), _price_text(InventoryService.sell_price(item_id))])
+		row.pressed.connect(_on_sell_pressed.bind(item_id))
+		sell_index += 1
+	_sell_rows.custom_minimum_size = Vector2(320.0, maxf(min_height, float(sell_index) * SHOP_ROW_HEIGHT))
+	_sell_rows.size = _sell_rows.custom_minimum_size
+
+
+func _shop_row(parent: Control, index: int, text: String) -> UiButton:
+	var row := _button(parent, Vector2(0.0, float(index) * SHOP_ROW_HEIGHT),
+			Vector2(316.0, SHOP_ROW_HEIGHT - 6.0))
+	row.set_caption(text)
+	return row
+
+
+func _price_text(value: int) -> String:
+	return Locale.t("inv.shop.price", [value])
+
+
+func _on_buy_pressed(item_id: StringName) -> void:
+	var def := ItemRegistry.get_item(item_id)
+	if def == null:
+		return
+	# 先给可读原因，再交给服务层做原子校验（服务层失败时状态不变）。
+	if InventoryService.gold < def.value:
+		_show_hint(Locale.t("inv.coins_not_enough"))
+		return
+	if InventoryService.buy(item_id):
+		_show_hint(Locale.t("inv.bought_hint", [Locale.t(def.name_key)]))
+	else:
+		_show_hint(Locale.t("inventory.full"))
+
+
+func _on_sell_pressed(item_id: StringName) -> void:
+	var def := ItemRegistry.get_item(item_id)
+	if def == null:
+		return
+	var gain := InventoryService.sell_price(item_id)
+	if InventoryService.sell(item_id):
+		_show_hint(Locale.t("inv.sold_hint", [Locale.t(def.name_key), gain]))
+
+
 # ---------------- 交互与生命周期 ----------------
 
 func _switch_tab(index: int) -> void:
 	_tab = index
 	_bag_page.visible = index == 0
 	_equip_page.visible = index == 1
+	_shop_page.visible = index == 2
 	_refresh_texts()
 
 
@@ -360,6 +488,7 @@ func _on_language_changed(_code: String) -> void:
 
 func _on_inventory_changed() -> void:
 	_rebuild_bag()
+	_rebuild_shop()
 	_refresh_footer()
 	if _stats_label != null:
 		_stats_label.text = _stats_text()
@@ -371,6 +500,8 @@ func _on_equipment_changed(_slot: String, _item_id: String) -> void:
 
 func _on_gold_changed(_gold: int) -> void:
 	_refresh_footer()
+	# 金币变化会影响「买得起 / 买不起」的提示，但行内容不变，只需刷新底部与提示。
+	_refresh_texts()
 
 
 func _pause_game() -> void:
@@ -446,6 +577,40 @@ func press_bag_row(index: int) -> bool:
 		return false
 	rows[index].pressed.emit()
 	return true
+
+
+func shop_buy_row_count() -> int:
+	return _buy_items.size()
+
+
+func shop_sell_row_count() -> int:
+	return _sell_items.size()
+
+
+func buy_row_item_id(index: int) -> StringName:
+	if index < 0 or index >= _buy_items.size():
+		return &""
+	return _buy_items[index]
+
+
+func press_buy_row(index: int) -> bool:
+	if index < 0 or index >= _buy_items.size():
+		return false
+	_on_buy_pressed(_buy_items[index])
+	return true
+
+
+func press_sell_row(index: int) -> bool:
+	if index < 0 or index >= _sell_items.size():
+		return false
+	_on_sell_pressed(_sell_items[index])
+	return true
+
+
+func sell_row_item_id(index: int) -> StringName:
+	if index < 0 or index >= _sell_items.size():
+		return &""
+	return _sell_items[index]
 
 
 func switch_tab_to(index: int) -> void:

@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ShopData" format=3]
+
+[ext_resource type="Script" path="res://scripts/items/shop_data.gd" id="1_wsoo0"]
+[ext_resource type="Script" path="res://scripts/items/item_data.gd" id="2_8lrkt"]
+[ext_resource type="Resource" path="res://data/items/items/con_medkit.tres" id="3_qy81j"]
+[ext_resource type="Resource" path="res://data/items/items/con_mana_draught.tres" id="4_rveom"]
+[ext_resource type="Resource" path="res://data/items/items/con_ration.tres" id="5_rq01m"]
+[ext_resource type="Resource" path="res://data/items/items/wep_rusty_sword.tres" id="6_n0y1f"]
+[ext_resource type="Resource" path="res://data/items/items/shl_wooden.tres" id="7_y0xrg"]
+[ext_resource type="Resource" path="res://data/items/items/helm_leather.tres" id="8_qumgf"]
+[ext_resource type="Resource" path="res://data/items/items/boots_traveler.tres" id="9_smixt"]
+
+[resource]
+script = ExtResource("1_wsoo0")
+id = &"basic"
+stock = Array[ExtResource("2_8lrkt")]([ExtResource("3_qy81j"), ExtResource("4_rveom"), ExtResource("5_rq01m"), ExtResource("6_n0y1f"), ExtResource("7_y0xrg"), ExtResource("8_qumgf"), ExtResource("9_smixt")])
