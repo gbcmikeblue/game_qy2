@@ -4,10 +4,12 @@ class_name EnemyController
 ## 敌人：显式状态机 + 网格寻路。AI 不碰 UI、不改进背包等其它模块的数据。
 ## 排序保持阶段 A 的约定：节点 position 的 y 即脚底，父级 y_sort 处理遮挡。
 
-enum State { IDLE, PATROL, CHASE, ATTACK, HURT, RETURN, DEAD }
+enum State { IDLE, PATROL, CHASE, ATTACK, SKILL, HURT, RETURN, DEAD }
 
 const ATTACK_WINDUP := 0.22
 const ATTACK_RECOVER := 0.18
+## 技能后摇：前摇结束到回到追击之间原地停顿，避免技能与普攻无缝连打。
+const SKILL_RECOVER := 0.35
 const HURT_DURATION := 0.18
 const PATH_REFRESH_INTERVAL := 0.25
 const PATH_REFRESH_DISTANCE := 32.0
@@ -32,6 +34,13 @@ var aggro_radius := 220.0
 var deaggro_radius := 360.0
 var patrol_radius := 70.0
 
+# 敌人技能：{id, name_key, cooldown, range, multiplier, windup}；为空表示只会普攻。
+var skill_def: Dictionary = {}
+var skill_cooldown := 0.0
+var skill_range := 0.0
+var skill_multiplier := 1.0
+var skill_windup := 0.4
+
 var _map
 var _health: HealthComponent
 var _visual: Node2D
@@ -40,6 +49,9 @@ var _rng := RandomNumberGenerator.new()
 var _state_time := 0.0
 var _hurt_left := 0.0
 var _cooldown_left := 0.0
+# 技能侧的状态：剩余冷却、前摇是否已经结算过。
+var _skill_cd_left := 0.0
+var _skill_hit := false
 var _patrol_wait := 1.5
 var _patrol_target := Vector2.ZERO
 var _path: Array[Vector2i] = []
@@ -128,6 +140,15 @@ func _apply_def() -> void:
 	deaggro_radius = float(def.get("deaggro_radius", 360))
 	patrol_radius = float(def.get("patrol_radius", 70))
 
+	# 敌人技能：没有配就是「只会普攻」，所有技能逻辑都会跳过。
+	var raw_skill: Variant = def.get("skill", {})
+	skill_def = raw_skill as Dictionary if typeof(raw_skill) == TYPE_DICTIONARY else {}
+	if not skill_def.is_empty():
+		skill_cooldown = float(skill_def.get("cooldown", 5.0))
+		skill_range = float(skill_def.get("range", attack_range * 2.5))
+		skill_multiplier = float(skill_def.get("multiplier", 1.6))
+		skill_windup = float(skill_def.get("windup", 0.45))
+
 
 func _apply_body_radius(radius: float) -> void:
 	var collision := get_node_or_null("Collision") as CollisionShape2D
@@ -147,6 +168,7 @@ func _physics_process(delta: float) -> void:
 
 	_state_time += delta
 	_cooldown_left = maxf(0.0, _cooldown_left - delta)
+	_skill_cd_left = maxf(0.0, _skill_cd_left - delta)
 
 	match state:
 		State.IDLE:
@@ -157,6 +179,8 @@ func _physics_process(delta: float) -> void:
 			_tick_chase(delta)
 		State.ATTACK:
 			_tick_attack(delta)
+		State.SKILL:
+			_tick_skill(delta)
 		State.HURT:
 			_tick_hurt(delta)
 		State.RETURN:
@@ -186,10 +210,57 @@ func _tick_chase(delta: float) -> void:
 	if not _is_target_valid() or _distance_to_target() > deaggro_radius:
 		_set_state(State.RETURN)
 		return
+	# 技能优先：射程比普攻远，给玩家「看到前摇再拉开」的反应窗口。
+	if can_use_skill():
+		_set_state(State.SKILL)
+		return
 	if _distance_to_target() <= attack_range and _cooldown_left <= 0.0:
 		_set_state(State.ATTACK)
 		return
 	_follow_target(delta)
+
+
+## 能不能起手技能：有配置、冷却好了、目标在技能射程内。
+func can_use_skill() -> bool:
+	if skill_def.is_empty() or _skill_cd_left > 0.0:
+		return false
+	if not _is_target_valid():
+		return false
+	return _distance_to_target() <= skill_range
+
+
+## SKILL 状态：原地前摇（不动）→ 一次结算 → 进冷却 → 回到追击。
+## 前摇期间被打会切到 HURT，因此技能天然可被打断（这是设计意图，不是漏判）。
+func _tick_skill(delta: float) -> void:
+	velocity = velocity.move_toward(Vector2.ZERO, ACCELERATION * delta)
+	move_and_slide()
+	if not _skill_hit and _state_time >= skill_windup:
+		_skill_hit = true
+		cast_skill()
+	if _state_time >= skill_windup + SKILL_RECOVER:
+		_skill_cd_left = skill_cooldown
+		_set_state(State.CHASE if _is_target_valid() else State.RETURN)
+
+
+## 结算一次技能（与玩家共用 CombatService，伤害倍率来自敌人配置）。
+## 返回命中次数，便于验收。
+func cast_skill() -> int:
+	var target := _get_target()
+	if target == null:
+		return 0
+	var result := CombatService.strike(self, target, {
+		"attack": attack * skill_multiplier,
+		"max_range": skill_range,
+		"range_tolerance": 1.25,
+		"show_damage_fx": true,
+	})
+	if not bool(result["hit"]):
+		return 0
+	var name_key := String(skill_def.get("name_key", ""))
+	if not name_key.is_empty():
+		CombatFx.show_text(global_position + Vector2(0.0, -34.0), Locale.t(name_key),
+				Color(1.0, 0.62, 0.35))
+	return 1
 
 
 func _tick_attack(delta: float) -> void:
@@ -238,6 +309,9 @@ func _set_state(next: int) -> void:
 			_path_timer = 0.0
 		State.ATTACK:
 			_attack_hit = false
+			velocity = Vector2.ZERO
+		State.SKILL:
+			_skill_hit = false
 			velocity = Vector2.ZERO
 		State.HURT:
 			_hurt_left = HURT_DURATION

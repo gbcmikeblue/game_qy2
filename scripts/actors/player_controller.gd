@@ -520,20 +520,23 @@ func _resolve_attack(target: EnemyController) -> int:
 	return 1 if bool(result["hit"]) else 0
 
 
-func take_damage(amount: int, source: Node = null) -> void:
+## 返回是否真正扣血：CombatService 靠这个返回值区分「命中」与「被拒绝（无敌帧/已死）」。
+## 之前这里返回 void，结算侧永远判定 rejected——伤害进了血但结果报未命中。
+func take_damage(amount: int, source: Node = null) -> bool:
 	# 先记录"谁在攻击我"，再判断能不能真正扣血：
 	# 复活无敌帧、受击保护期内攻击虽然不生效，但目标接管必须照常进行，
 	# 否则复活后立刻挨打时会没有选中目标。
 	_latch_attacker(source)
 	if _dead or _invuln_left > 0.0:
-		return
+		return false
 	var applied := _health.take_damage(amount)
 	if applied <= 0:
-		return
+		return false
 	_invuln_left = hurt_invuln
 	if _visual != null and _visual.has_method("flash"):
 		_visual.flash()
 	CombatFx.show_hurt(global_position, applied)
+	return true
 
 
 func _physics_process(delta: float) -> void:

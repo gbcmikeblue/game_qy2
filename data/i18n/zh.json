@@ -47,6 +47,9 @@
 
   "actor.hero": "勇者",
   "enemy.forest_wolf": "森林狼",
+  "enemy.skill.pounce": "扑咬",
+  "enemy.skill.charge": "冲撞",
+  "enemy.skill.dash": "俯冲",
   "enemy.stone_boar": "石野猪",
   "enemy.cave_bat": "洞穴蝙蝠",
 

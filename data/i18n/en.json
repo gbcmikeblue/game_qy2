@@ -47,6 +47,9 @@
 
   "actor.hero": "HERO",
   "enemy.forest_wolf": "FOREST WOLF",
+  "enemy.skill.pounce": "POUNCE",
+  "enemy.skill.charge": "CHARGE",
+  "enemy.skill.dash": "DASH",
   "enemy.stone_boar": "STONE BOAR",
   "enemy.cave_bat": "CAVE BAT",
 

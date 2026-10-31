@@ -55,6 +55,7 @@ func _ready() -> void:
 	# 上一个用例的攻击会打进下一个用例的帧里（排查过一次，很难看出来）。
 	await _test_skill()
 	await _test_whirlwind()
+	await _test_enemy_skill()
 	_test_health_component()
 	_test_pathfinding()
 	await _test_fsm()
@@ -111,7 +112,7 @@ func _test_spawn_layout() -> void:
 		await get_tree().physics_frame
 		for node: Node in get_tree().get_nodes_in_group("enemies"):
 			var current: String = node.get_state_name()
-			if (current == "CHASE" or current == "ATTACK") and not combat_states.has(current):
+			if (current == "CHASE" or current == "ATTACK" or current == "SKILL") and not combat_states.has(current):
 				combat_states.append(current)
 	_check(combat_states.is_empty(), "开局 3 秒内没有怪物进入战斗状态（观测到 %s）" % str(combat_states))
 	_check(_player.get_hp() == hp_before, "开局 3 秒内玩家未受伤（%d/%d）" % [_player.get_hp(), _player.get_max_hp()])
@@ -285,6 +286,53 @@ func _test_whirlwind() -> void:
 	_player.mp = _player.max_mp
 
 
+## 敌人技能：三种怪都配了、射程内可起手、伤害走 CombatService、射程外与冷却中不可用。
+func _test_enemy_skill() -> void:
+	_clear_enemies()
+	await get_tree().physics_frame
+	await _ensure_player_alive()
+	_player.global_position = _map.spawn_world_position()
+	_player.velocity = Vector2.ZERO
+	InputManager.touch_vector = Vector2.ZERO
+	_player.set_hp(_player.get_max_hp())
+	# 前面的用例可能让玩家还处在受击无敌帧里，那会让技能被拒绝（不是技能本身的问题）。
+	_player._invuln_left = 0.0
+	await get_tree().physics_frame
+
+	var configured := 0
+	for enemy_id: String in ["forest_wolf", "stone_boar", "cave_bat"]:
+		var raw: Variant = DataRegistry.get_enemy_def(enemy_id).get("skill", {})
+		if typeof(raw) == TYPE_DICTIONARY and not (raw as Dictionary).is_empty():
+			configured += 1
+	_check(configured == 3, "三种敌人都配了技能（%d/3）" % configured)
+
+	var wolf = _map.spawn_enemy("forest_wolf", Vector2i(12, 14))
+	wolf.set_physics_process(false)   # 手动驱动，避免 AI 与断言抢时序
+	wolf.global_position = _player.global_position + Vector2(wolf.skill_range * 0.6, 0.0)
+	wolf._skill_cd_left = 0.0
+	_check(not wolf.skill_def.is_empty(), "狼的技能定义已展开（%s）" % wolf.skill_def.get("id", ""))
+	_check(wolf.can_use_skill(), "射程内且冷却好时可以起手")
+
+	var hp_before: int = _player.get_hp()
+	_check(wolf.cast_skill() == 1, "技能命中返回 1")
+	var expected := maxi(1, int(round(wolf.attack * wolf.skill_multiplier - _player.get_defense())))
+	_check(hp_before - _player.get_hp() == expected,
+			"技能伤害 = 攻击×倍率 - 防御（%d，期望 %d）" % [hp_before - _player.get_hp(), expected])
+
+	# 射程外不能起手
+	wolf.global_position = _player.global_position + Vector2(wolf.skill_range + 80.0, 0.0)
+	_check(not wolf.can_use_skill(), "超出技能射程不能起手")
+
+	# 冷却中不能起手
+	wolf.global_position = _player.global_position + Vector2(wolf.skill_range * 0.6, 0.0)
+	wolf._skill_cd_left = wolf.skill_cooldown
+	_check(not wolf.can_use_skill(), "冷却中不能起手")
+
+	_clear_enemies()
+	await get_tree().physics_frame
+	_player.set_hp(_player.get_max_hp())
+
+
 func _test_health_component() -> void:
 	var health := HealthComponent.new()
 	add_child(health)
@@ -356,8 +404,10 @@ func _test_fsm() -> void:
 		if _player.get_hp() < hp_before:
 			break
 	_check(_player.get_hp() < hp_before, "CHASE -> ATTACK：进入攻击距离后发动攻击")
-	_check(wolf.get_state_name() == "ATTACK" or wolf.get_state_name() == "CHASE",
-			"攻击后敌人停留在战斗状态（当前 %s）" % wolf.get_state_name())
+	# SKILL 也属于战斗状态（射程内优先起手技能，此时不一定停在 CHASE/ATTACK）。
+	var combat_after: String = wolf.get_state_name()
+	_check(combat_after == "ATTACK" or combat_after == "CHASE" or combat_after == "SKILL",
+			"攻击后敌人停留在战斗状态（当前 %s）" % combat_after)
 
 	wolf.take_damage(1)
 	await get_tree().physics_frame
