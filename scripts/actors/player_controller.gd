@@ -165,6 +165,20 @@ func heal_to_full() -> void:
 		_health.reset_full()
 
 
+## 消耗品回血入口：由 UI 调用，扣物品在服务层完成。
+func heal(amount: int) -> void:
+	if _health != null and not _dead:
+		_health.heal(amount)
+
+
+func get_mp() -> int:
+	return 0
+
+
+func get_max_mp() -> int:
+	return max_mp
+
+
 # ---------------- 可见范围 ----------------
 
 ## 候选判定用的屏幕矩形（像素）：视口内部收缩 lock_screen_margin。

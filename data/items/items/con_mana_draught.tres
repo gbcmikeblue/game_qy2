@@ -12,3 +12,4 @@ stackable = true
 max_stack = 99
 value = 25
 use_effect = &"restore_mp"
+mp_amount = 20

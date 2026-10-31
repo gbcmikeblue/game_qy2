@@ -57,5 +57,6 @@ func _spawn_drop(item_id: StringName, qty: int, world_position: Vector2) -> void
 	drop.setup(item_id, qty)
 	var offset := Vector2(rng.randf_range(-16.0, 16.0), rng.randf_range(-8.0, 8.0))
 	drop.position = world_position + offset
-	var parent := entity_root if entity_root != null else self
+	# 显式标注类型：三元里 Node2D 与 Node 混合会被推断成 Variant，本项目把该警告当错误。
+	var parent: Node = entity_root if entity_root != null else self
 	parent.add_child(drop)

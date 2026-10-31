@@ -9,6 +9,7 @@ const ITEMS_DIR := "res://data/items/items"
 const LOOT_DIR := "res://data/items/loot"
 const LOOT_SERVICE := preload("res://scripts/items/loot_service.gd")
 const PLAYER_SCENE := preload("res://scenes/actors/player/player.tscn")
+const INVENTORY_PANEL := preload("res://scenes/ui/inventory_panel.tscn")
 
 var _failures: Array[String] = []
 
@@ -45,6 +46,7 @@ func _ready() -> void:
 	_test_loot_guaranteed()
 	await _test_kill_to_inventory()
 	await _test_equipment_affects_player()
+	await _test_inventory_panel()
 	InventoryService.reset()
 	_report()
 
@@ -367,6 +369,60 @@ func _test_equipment_affects_player() -> void:
 
 	remove_child(hero)
 	hero.queue_free()
+	InventoryService.reset()
+
+
+# ---------------- 24. UI：背包/装备面板可操作 ----------------
+
+func _test_inventory_panel() -> void:
+	InventoryService.reset()
+	InventoryService.add_item(&"wep_rusty_sword", 1)
+	InventoryService.add_item(&"con_medkit", 2)
+
+	var panel = INVENTORY_PANEL.instantiate()
+	add_child(panel)
+	await get_tree().process_frame
+
+	_check(panel.current_tab() == 0, "面板默认停在背包页签")
+	_check(panel.bag_row_count() == 2, "背包行数 = 物品种类数（%d）" % panel.bag_row_count())
+
+	# 点击第 1 行（武器）→ 装备，行数减一
+	_check(panel.press_bag_row(0), "点击背包行返回成功")
+	_check(InventoryService.equipped_in("weapon") == &"wep_rusty_sword", "点击武器行后已装备")
+	_check(panel.bag_row_count() == 1, "装备后背包少一行（%d）" % panel.bag_row_count())
+
+	# 切到装备页并卸下
+	panel.switch_tab_to(1)
+	_check(panel.current_tab() == 1, "可以切到装备页签")
+	panel.press_unequip("weapon")
+	_check(InventoryService.equipped_in("weapon") == &"", "装备页卸下成功")
+	_check(panel.bag_row_count() == 2, "卸下后物品回到背包（%d 行）" % panel.bag_row_count())
+
+	# 使用消耗品：先扣血才能验证回血
+	var hero = PLAYER_SCENE.instantiate()
+	add_child(hero)
+	# 面板通过 GameManager.get_player() 找玩家，这里显式登记。
+	GameManager.player = hero
+	await get_tree().process_frame
+	hero.take_damage(50)
+	var hp_before: int = hero.get_hp()
+	panel.switch_tab_to(0)
+	# 按 id 找行，不假设列表顺序（装备/卸下会改变顺序）。
+	var medkit_index := -1
+	for i in panel.bag_row_count():
+		if panel.bag_row_item_id(i) == &"con_medkit":
+			medkit_index = i
+			break
+	_check(medkit_index >= 0, "能在列表里定位到医疗包")
+	panel.press_bag_row(medkit_index)
+	_check(InventoryService.count_of(&"con_medkit") == 1, "使用医疗包后数量减 1")
+	_check(hero.get_hp() > hp_before, "使用医疗包后回血（%d → %d）" % [hp_before, hero.get_hp()])
+
+	GameManager.player = null
+	remove_child(hero)
+	hero.queue_free()
+	panel.close_panel()
+	await get_tree().process_frame
 	InventoryService.reset()
 
 

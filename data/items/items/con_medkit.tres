@@ -12,3 +12,4 @@ stackable = true
 max_stack = 99
 value = 20
 use_effect = &"heal_hp"
+heal_amount = 30

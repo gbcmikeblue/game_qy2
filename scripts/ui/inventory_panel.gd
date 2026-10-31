@@ -1,0 +1,468 @@
+extends CanvasLayer
+
+## 背包 / 装备面板：绕开窗口做自适应（同设置面板：设计尺寸 + 整体 scale）。
+## 分两个页签：背包（列表，点击装备或使用）与装备（5 槽 + 属性）。
+## 商店页签在 B2 接入，先不占位，避免出现「点不动的入口」。
+
+signal closed
+
+const PANEL_DESIGN := Vector2(720.0, 520.0)
+const PANEL_WIDTH_RATIO := 0.92
+const PANEL_HEIGHT_RATIO := 0.92
+const PANEL_MAX_SCALE := 1.2
+const PANEL_MIN_SCALE := 0.6
+const BODY_MIN_DP := 14.0
+
+const FONT_TITLE := 30
+const FONT_SECTION := 22
+const FONT_BODY := 20
+const FONT_HELPER := 17
+
+const CONTENT_RECT := Rect2(20.0, 116.0, 680.0, 314.0)
+const ROW_HEIGHT := 52.0
+const ROW_WIDTH := 660.0
+const ICON_SIZE := 34.0
+## 槽位文案 key 前缀：用拼接而不是模板串，否则 i18n 验收会把 "inv.slot.%s" 当成缺失词条。
+const SLOT_KEY_PREFIX := "inv.slot."
+
+## 占位图标配色：按 id 哈希取色，正式图标接入后整体替换。
+const ICON_PALETTE := [
+	Color(0.42, 0.55, 0.72), Color(0.55, 0.45, 0.70), Color(0.45, 0.62, 0.48),
+	Color(0.72, 0.55, 0.38), Color(0.62, 0.42, 0.45), Color(0.40, 0.58, 0.62),
+]
+
+var _panel: ColorRect
+var _title: Label
+var _bag_tab: UiButton
+var _equip_tab: UiButton
+var _content: Control
+var _bag_page: Control
+var _equip_page: Control
+var _bag_scroll: ScrollContainer
+var _bag_rows: Control
+var _gold_label: Label
+var _capacity_label: Label
+var _hint: Label
+var _close_button: UiButton
+var _stats_label: Label
+
+var _tab := 0
+var _hint_left := 0.0
+## 背包行与物品 id 的对应关系（验收脚本按 id 找行，不依赖顺序）。
+var _row_items: Array[StringName] = []
+
+
+func _ready() -> void:
+	layer = 10
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	_build()
+	_locale_and_signals()
+	_pause_game()
+	_refresh_all()
+
+
+func _exit_tree() -> void:
+	if DisplayAdapter.layout_changed.is_connected(_layout):
+		DisplayAdapter.layout_changed.disconnect(_layout)
+	if EventBus.inventory_changed.is_connected(_on_inventory_changed):
+		EventBus.inventory_changed.disconnect(_on_inventory_changed)
+	if EventBus.equipment_changed.is_connected(_on_equipment_changed):
+		EventBus.equipment_changed.disconnect(_on_equipment_changed)
+	if EventBus.gold_changed.is_connected(_on_gold_changed):
+		EventBus.gold_changed.disconnect(_on_gold_changed)
+	_resume_game()
+
+
+func _locale_and_signals() -> void:
+	Locale.language_changed.connect(_on_language_changed)
+	DisplayAdapter.layout_changed.connect(_layout)
+	EventBus.inventory_changed.connect(_on_inventory_changed)
+	EventBus.equipment_changed.connect(_on_equipment_changed)
+	EventBus.gold_changed.connect(_on_gold_changed)
+
+
+# ---------------- 构建 ----------------
+
+func _build() -> void:
+	var dim := ColorRect.new()
+	dim.color = Color(0.0, 0.0, 0.0, 0.62)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(dim)
+
+	_panel = ColorRect.new()
+	_panel.color = Color(0.10, 0.12, 0.16, 0.98)
+	_panel.size = PANEL_DESIGN
+	_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_panel)
+	_layout()
+
+	_title = _label(Vector2(24.0, 10.0), Vector2(400.0, 42.0), FONT_TITLE, _panel)
+
+	_bag_tab = _button(_panel, Vector2(24.0, 62.0), Vector2(150.0, 40.0))
+	_bag_tab.pressed.connect(_switch_tab.bind(0))
+	_equip_tab = _button(_panel, Vector2(182.0, 62.0), Vector2(150.0, 40.0))
+	_equip_tab.pressed.connect(_switch_tab.bind(1))
+
+	_content = Control.new()
+	_content.position = CONTENT_RECT.position
+	_content.size = CONTENT_RECT.size
+	_content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_panel.add_child(_content)
+
+	_build_bag_page()
+	_build_equip_page()
+
+	_gold_label = _label(Vector2(24.0, 440.0), Vector2(190.0, 34.0), FONT_BODY, _panel)
+	_capacity_label = _label(Vector2(220.0, 440.0), Vector2(220.0, 34.0), FONT_BODY, _panel)
+	_hint = _label(Vector2(24.0, 486.0), Vector2(500.0, 26.0), FONT_HELPER, _panel)
+	_close_button = _button(_panel, Vector2(536.0, 440.0), Vector2(160.0, 42.0))
+	_close_button.pressed.connect(_close)
+
+
+func _build_bag_page() -> void:
+	_bag_page = Control.new()
+	_bag_page.size = CONTENT_RECT.size
+	_bag_page.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_content.add_child(_bag_page)
+
+	_bag_scroll = ScrollContainer.new()
+	_bag_scroll.size = CONTENT_RECT.size
+	_bag_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_bag_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_bag_scroll.scroll_deadzone = 8
+	_bag_page.add_child(_bag_scroll)
+
+	_bag_rows = Control.new()
+	_bag_rows.custom_minimum_size = CONTENT_RECT.size
+	_bag_rows.size = CONTENT_RECT.size
+	_bag_rows.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bag_scroll.add_child(_bag_rows)
+
+
+func _build_equip_page() -> void:
+	_equip_page = Control.new()
+	_equip_page.size = CONTENT_RECT.size
+	_equip_page.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_equip_page.visible = false
+	_content.add_child(_equip_page)
+
+
+# ---------------- 布局与文案 ----------------
+
+func _layout() -> void:
+	if not is_instance_valid(_panel):
+		return
+	var viewport := get_viewport().get_visible_rect().size
+	var insets := DisplayAdapter.safe_insets
+	var usable := Vector2(
+		maxf(1.0, viewport.x - insets.x - insets.z),
+		maxf(1.0, viewport.y - insets.y - insets.w))
+	var by_space := minf(
+		usable.x * PANEL_WIDTH_RATIO / PANEL_DESIGN.x,
+		usable.y * PANEL_HEIGHT_RATIO / PANEL_DESIGN.y)
+	var readable := DisplayAdapter.dp(BODY_MIN_DP) / float(FONT_BODY)
+	var upper := minf(maxf(PANEL_MAX_SCALE, readable * 1.1), 1.6)
+	var scale_factor := clampf(minf(by_space, upper), PANEL_MIN_SCALE, upper)
+	_panel.size = PANEL_DESIGN
+	_panel.scale = Vector2(scale_factor, scale_factor)
+	var scaled := _panel.size * scale_factor
+	_panel.position = (Vector2(insets.x, insets.y) + (usable - scaled) * 0.5).round()
+
+
+func _refresh_texts() -> void:
+	_title.text = Locale.t("inv.title")
+	_bag_tab.set_caption(Locale.t("inv.tab.bag"))
+	_equip_tab.set_caption(Locale.t("inv.tab.equip"))
+	_close_button.set_caption(Locale.t("inv.close"))
+	_bag_tab.set_highlight(_tab == 0)
+	_equip_tab.set_highlight(_tab == 1)
+
+
+func _refresh_all() -> void:
+	_refresh_texts()
+	_rebuild_bag()
+	_rebuild_equip()
+	_refresh_footer()
+
+
+func _refresh_footer() -> void:
+	_gold_label.text = Locale.t("inv.gold", [InventoryService.gold])
+	_capacity_label.text = Locale.t("inv.capacity",
+			[InventoryService.items.size(), InventoryService.capacity])
+
+
+# ---------------- 背包页签 ----------------
+
+func _rebuild_bag() -> void:
+	_row_items.clear()
+	# 先摘再 free：queue_free 是延迟的，若只调它，刚重建的那一帧里 get_child_count 会多算旧行。
+	for child: Node in _bag_rows.get_children():
+		_bag_rows.remove_child(child)
+		child.queue_free()
+
+	if InventoryService.items.is_empty():
+		var empty := _label(Vector2(8.0, 12.0), Vector2(600.0, 32.0), FONT_BODY, _bag_rows)
+		empty.text = Locale.t("inv.empty")
+		_bag_rows.custom_minimum_size = CONTENT_RECT.size
+		return
+
+	var index := 0
+	for entry: Dictionary in InventoryService.items:
+		var item_id: StringName = entry["id"]
+		var qty := int(entry["qty"])
+		var def := ItemRegistry.get_item(item_id)
+		if def == null:
+			continue
+		_row_items.append(def.id)
+		_make_row(index, def, qty)
+		index += 1
+
+	var height := maxf(CONTENT_RECT.size.y, float(index) * ROW_HEIGHT)
+	_bag_rows.custom_minimum_size = Vector2(CONTENT_RECT.size.x, height)
+	_bag_rows.size = _bag_rows.custom_minimum_size
+
+
+func _make_row(index: int, def: ItemData, qty: int) -> void:
+	var y := float(index) * ROW_HEIGHT
+	var row := _button(_bag_rows, Vector2(0.0, y), Vector2(ROW_WIDTH, ROW_HEIGHT - 8.0))
+	row.set_caption("")
+	row.pressed.connect(_on_item_pressed.bind(def.id))
+
+	var icon := ColorRect.new()
+	icon.color = _icon_color(def.id)
+	icon.position = Vector2(10.0, (ROW_HEIGHT - 8.0 - ICON_SIZE) * 0.5)
+	icon.size = Vector2(ICON_SIZE, ICON_SIZE)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(icon)
+
+	var initial := _label(Vector2(10.0, icon.position.y), Vector2(ICON_SIZE, ICON_SIZE), FONT_HELPER, row)
+	initial.text = Locale.t(def.name_key).substr(0, 1)
+	initial.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	initial.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+
+	var name_label := _label(Vector2(56.0, 6.0), Vector2(420.0, 32.0), FONT_BODY, row)
+	name_label.text = Locale.t(def.name_key)
+
+	var qty_label := _label(Vector2(480.0, 6.0), Vector2(170.0, 32.0), FONT_BODY, row)
+	qty_label.text = "×%d" % qty
+	qty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+
+
+func _on_item_pressed(item_id: StringName) -> void:
+	var def := ItemRegistry.get_item(item_id)
+	if def == null:
+		return
+	if def.is_equipment():
+		if InventoryService.equip(item_id):
+			_show_hint(Locale.t("inv.equipped_hint", [Locale.t(def.name_key)]))
+		else:
+			_show_hint(Locale.t("inventory.full"))
+		return
+	if def.category == ItemData.Category.CONSUMABLE:
+		_use_consumable(def)
+		return
+	_show_hint(Locale.t("inv.no_effect"))
+
+
+func _use_consumable(def: ItemData) -> void:
+	var hero := GameManager.get_player()
+	if hero == null or not is_instance_valid(hero):
+		return
+	if def.use_effect == &"heal_hp" and hero.has_method("heal"):
+		if hero.get_hp() >= hero.get_max_hp():
+			_show_hint(Locale.t("inv.hp_full"))
+			return
+		if def.heal_amount <= 0 or not InventoryService.remove_item(def.id, 1):
+			_show_hint(Locale.t("inv.no_effect"))
+			return
+		hero.heal(def.heal_amount)
+		_show_hint(Locale.t("inv.used_hint", [Locale.t(def.name_key)]))
+		return
+	# 魔法尚未消耗（技能未实装），先明确提示而不是静默失败。
+	_show_hint(Locale.t("inv.no_effect"))
+
+
+# ---------------- 装备页签 ----------------
+
+func _rebuild_equip() -> void:
+	for child: Node in _equip_page.get_children():
+		_equip_page.remove_child(child)
+		child.queue_free()
+
+	var index := 0
+	for slot: String in ItemRegistry.slots:
+		var y := float(index) * ROW_HEIGHT
+		var slot_label := _label(Vector2(8.0, y + 10.0), Vector2(160.0, 34.0), FONT_BODY, _equip_page)
+		slot_label.text = Locale.t(_slot_key(slot))
+
+		var item_id := InventoryService.equipped_in(slot)
+		var value_label := _label(Vector2(180.0, y + 10.0), Vector2(300.0, 34.0), FONT_BODY, _equip_page)
+		if item_id == &"":
+			value_label.text = "—"
+		else:
+			var def := ItemRegistry.get_item(item_id)
+			value_label.text = Locale.t(def.name_key) if def != null else String(item_id)
+
+		if item_id != &"":
+			var button := _button(_equip_page, Vector2(500.0, y + 4.0), Vector2(150.0, 42.0))
+			button.set_caption(Locale.t("inv.unequip"))
+			button.pressed.connect(_on_unequip_pressed.bind(slot))
+		index += 1
+
+	_stats_label = _label(Vector2(8.0, float(index) * ROW_HEIGHT + 12.0),
+			Vector2(620.0, 92.0), FONT_HELPER, _equip_page)
+	_stats_label.text = _stats_text()
+
+
+func _stats_text() -> String:
+	var s := InventoryService.stats()
+	return "%s   %s   %s   %s" % [
+		Locale.t("inv.stat.attack", [int(round(float(s["attack"])))]),
+		Locale.t("inv.stat.defense", [int(round(float(s["defense"])))]),
+		Locale.t("inv.stat.hp", [int(round(float(s["max_hp"])))]),
+		Locale.t("inv.stat.mp", [int(round(float(s["max_mp"])))]),
+	]
+
+
+func _on_unequip_pressed(slot: String) -> void:
+	if InventoryService.unequip(slot):
+		_show_hint(Locale.t("inv.unequipped_hint", [Locale.t(_slot_key(slot))]))
+	else:
+		_show_hint(Locale.t("inventory.full"))
+
+
+# ---------------- 交互与生命周期 ----------------
+
+func _switch_tab(index: int) -> void:
+	_tab = index
+	_bag_page.visible = index == 0
+	_equip_page.visible = index == 1
+	_refresh_texts()
+
+
+func _show_hint(text: String) -> void:
+	_hint.text = text
+	_hint_left = 2.5
+
+
+func _process(delta: float) -> void:
+	if _hint_left <= 0.0:
+		return
+	_hint_left -= delta
+	if _hint_left <= 0.0:
+		_hint.text = ""
+
+
+func _on_language_changed(_code: String) -> void:
+	_refresh_all()
+
+
+func _on_inventory_changed() -> void:
+	_rebuild_bag()
+	_refresh_footer()
+	if _stats_label != null:
+		_stats_label.text = _stats_text()
+
+
+func _on_equipment_changed(_slot: String, _item_id: String) -> void:
+	_rebuild_equip()
+
+
+func _on_gold_changed(_gold: int) -> void:
+	_refresh_footer()
+
+
+func _pause_game() -> void:
+	GameManager.hold_pause(GameManager.PAUSE_SETTINGS)
+
+
+func _resume_game() -> void:
+	GameManager.release_pause(GameManager.PAUSE_SETTINGS)
+
+
+func _close() -> void:
+	_resume_game()
+	closed.emit()
+	queue_free()
+
+
+# ---------------- 控件工厂 ----------------
+
+func _icon_color(item_id: StringName) -> Color:
+	var hash_value := 0
+	for index in String(item_id).length():
+		hash_value = (hash_value * 31 + String(item_id).unicode_at(index)) % 100000
+	return ICON_PALETTE[absi(hash_value) % ICON_PALETTE.size()]
+
+
+func _slot_key(slot: String) -> String:
+	return SLOT_KEY_PREFIX + slot
+
+
+func _label(position: Vector2, size: Vector2, font_size: int, parent: Control = null) -> Label:
+	var label := Label.new()
+	label.position = position
+	label.size = size
+	label.add_theme_font_override("font", Locale.font)
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.92))
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var host := parent if parent != null else _panel
+	host.add_child(label)
+	return label
+
+
+func _button(parent: Control, position: Vector2, size: Vector2) -> UiButton:
+	var button := UiButton.new()
+	button.position = position
+	button.size = size
+	button.font_size = FONT_BODY
+	parent.add_child(button)
+	return button
+
+# ---------------- 验收接口（不依赖内部节点路径） ----------------
+
+func bag_row_count() -> int:
+	var total := 0
+	for child: Node in _bag_rows.get_children():
+		if child is UiButton:
+			total += 1
+	return total
+
+
+func bag_row_item_id(index: int) -> StringName:
+	if index < 0 or index >= _row_items.size():
+		return &""
+	return _row_items[index]
+
+
+func press_bag_row(index: int) -> bool:
+	var rows: Array[UiButton] = []
+	for child: Node in _bag_rows.get_children():
+		if child is UiButton:
+			rows.append(child as UiButton)
+	if index < 0 or index >= rows.size():
+		return false
+	rows[index].pressed.emit()
+	return true
+
+
+func switch_tab_to(index: int) -> void:
+	_switch_tab(index)
+
+
+func current_tab() -> int:
+	return _tab
+
+
+func press_unequip(slot: String) -> void:
+	_on_unequip_pressed(slot)
+
+
+func hint_text() -> String:
+	return _hint.text
+
+
+func close_panel() -> void:
+	_close()

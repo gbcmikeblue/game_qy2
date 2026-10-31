@@ -27,6 +27,9 @@ enum Rarity { COMMON, MAGIC, RARE, UNIQUE }
 @export var value: int = 0
 ## 消耗品效果键：heal_hp / restore_mp；空表示不可使用。
 @export var use_effect: StringName = &""
+## 使用后恢复的生命 / 魔法（0 表示不恢复该项）。
+@export var heal_amount: int = 0
+@export var mp_amount: int = 0
 
 
 func is_equipment() -> bool:

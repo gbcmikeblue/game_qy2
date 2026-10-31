@@ -46,6 +46,17 @@ mouse_filter = 0
 script = ExtResource("4_menu")
 font_size = 18
 
+[node name="InventoryButton" type="Control" parent="."]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -360.0
+offset_top = 16.0
+offset_right = -196.0
+offset_bottom = 54.0
+mouse_filter = 0
+script = ExtResource("4_menu")
+font_size = 18
+
 [node name="HpBack" type="ColorRect" parent="."]
 anchor_top = 1.0
 anchor_bottom = 1.0

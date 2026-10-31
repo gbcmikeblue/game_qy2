@@ -13,6 +13,7 @@ const HP_FILL_INSET := 2.0
 ## 调试信息不参与界面缩放：它的行数会撑高控件，放大后会压到左下角血条区。
 const NO_UI_SCALE := ["DebugLabel"]
 const SETTINGS_PANEL := preload("res://scenes/ui/settings_panel.tscn")
+const INVENTORY_PANEL := preload("res://scenes/ui/inventory_panel.tscn")
 
 @onready var _debug_label: Label = $DebugLabel
 @onready var _hp_back: ColorRect = $HpBack
@@ -20,6 +21,7 @@ const SETTINGS_PANEL := preload("res://scenes/ui/settings_panel.tscn")
 @onready var _hp_label: Label = $HpLabel
 @onready var _attack_button = $AttackButton
 @onready var _settings_button: UiButton = $SettingsButton
+@onready var _inventory_button: UiButton = $InventoryButton
 @onready var _hint_label: Label = $HintLabel
 
 var _lock_line := ""
@@ -51,6 +53,7 @@ func _ready() -> void:
 	_on_layout_changed()
 
 	_settings_button.pressed.connect(_on_settings_pressed)
+	_inventory_button.pressed.connect(_on_inventory_pressed)
 	Locale.language_changed.connect(_on_texts_changed)
 	GameSettings.bindings_changed.connect(_on_texts_changed)
 	_refresh_texts()
@@ -69,6 +72,8 @@ func _apply_fonts() -> void:
 	_hint_label.add_theme_font_size_override("font_size", DisplayAdapter.text_px("helper"))
 	_settings_button.font_size = DisplayAdapter.text_px("helper")
 	_settings_button.queue_redraw()
+	_inventory_button.font_size = DisplayAdapter.text_px("helper")
+	_inventory_button.queue_redraw()
 
 
 ## HUD 锚定「视口矩形内缩 safe_insets 后的矩形」：元素本身仍用边锚点，
@@ -132,6 +137,7 @@ func _on_texts_changed(_arg: Variant = null) -> void:
 
 func _refresh_texts() -> void:
 	_settings_button.set_caption(Locale.t("button.settings"))
+	_inventory_button.set_caption(Locale.t("button.inventory"))
 	_update_action_button()
 	_update_hint()
 
@@ -166,6 +172,15 @@ func _on_settings_pressed() -> void:
 	if is_instance_valid(_panel):
 		return
 	_panel = SETTINGS_PANEL.instantiate()
+	add_child(_panel)
+	if _panel.has_signal("closed"):
+		_panel.closed.connect(_on_panel_closed)
+
+
+func _on_inventory_pressed() -> void:
+	if is_instance_valid(_panel):
+		return
+	_panel = INVENTORY_PANEL.instantiate()
 	add_child(_panel)
 	if _panel.has_signal("closed"):
 		_panel.closed.connect(_on_panel_closed)
