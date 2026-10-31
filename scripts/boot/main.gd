@@ -20,6 +20,10 @@ var world_view
 var world: SubViewport
 var loot_service: Node
 
+## 换图/读档后的短暂"传送免疫"，避免落点就在传送点上时立刻又被传走。
+const PORTAL_GRACE := 0.8
+var _portal_grace := 0.0
+
 
 func _ready() -> void:
 	_build_world_view()
@@ -56,11 +60,17 @@ func _ready() -> void:
 	SaveService.current_map_id = String(map.map_id)
 	SaveService.map_switcher = switch_map
 
+	# 走进传送点由 main 统一换图：地图只负责摆放与发信号。
+	EventBus.portal_entered.connect(_on_portal_entered)
+
 	# 主菜单选了「读取存档」：等玩家、地图、HUD 都就绪后再恢复，
 	# 否则位置与血量会写到还不存在的节点上。
 	var pending := SaveService.consume_pending_slot()
-	if pending > 0 and not SaveService.load_slot(pending):
-		push_warning("读档失败（槽 %d），按新游戏继续" % pending)
+	if pending > 0:
+		if SaveService.load_slot(pending):
+			_portal_grace = PORTAL_GRACE
+		else:
+			push_warning("读档失败（槽 %d），按新游戏继续" % pending)
 
 
 ## 换图：保留玩家节点与状态，只重建地图，并把依赖地图的引用重新接上
@@ -97,6 +107,20 @@ func switch_map(next_id: String, spawn_cell := Vector2i(-1, -1)) -> bool:
 func _exit_tree() -> void:
 	if DisplayAdapter.layout_changed.is_connected(_apply_layout):
 		DisplayAdapter.layout_changed.disconnect(_apply_layout)
+	if EventBus.portal_entered.is_connected(_on_portal_entered):
+		EventBus.portal_entered.disconnect(_on_portal_entered)
+
+
+func _process(delta: float) -> void:
+	_portal_grace = maxf(0.0, _portal_grace - delta)
+
+
+## 传送点触发：换到目标地图与落点，并给一小段免疫，避免在门口来回弹。
+func _on_portal_entered(target_map: String, target_cell: Vector2i) -> void:
+	if _portal_grace > 0.0:
+		return
+	if switch_map(target_map, target_cell):
+		_portal_grace = PORTAL_GRACE
 
 
 func _build_world_view() -> void:

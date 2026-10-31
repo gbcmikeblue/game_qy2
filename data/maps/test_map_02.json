@@ -4,6 +4,9 @@
   "grid_size": [20, 20],
   "road_u": [9, 10],
   "player_spawn": [10, 10],
+  "portals": [
+    { "u": 10, "v": 12, "target": "test_map_01", "tu": 16, "tv": 5 }
+  ],
   "props": [
     { "type": "building", "u": 5, "v": 5, "w": 3, "h": 3 },
     { "type": "building", "u": 13, "v": 6, "w": 3, "h": 4 },

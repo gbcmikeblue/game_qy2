@@ -56,6 +56,7 @@ func _ready() -> void:
 	await _test_save_panel()
 	await _test_main_menu()
 	await _test_multi_map()
+	await _test_portals()
 	SaveService.autosave_enabled = true
 	InventoryService.reset()
 	_report()
@@ -719,6 +720,56 @@ func _test_multi_map() -> void:
 
 	SaveService.delete_slot(3)
 	SaveService.map_switcher = Callable()
+	remove_child(game)
+	game.queue_free()
+	await get_tree().process_frame
+	InventoryService.reset()
+
+
+# ---------------- 传送点：踩上去换图 / 落点正确 / 不回弹 ----------------
+
+func _test_portals() -> void:
+	InventoryService.reset()
+	var game = GAME_SCENE.instantiate()
+	add_child(game)
+	await get_tree().process_frame
+
+	var portals: Array[Node] = []
+	for node: Node in game.map.get_entity_root().get_children():
+		if node is PortalNode:
+			portals.append(node)
+	_check(portals.size() == 1, "test_map_01 有 1 个传送点（实际 %d）" % portals.size())
+	if portals.is_empty():
+		GameManager.player = null
+		remove_child(game)
+		game.queue_free()
+		return
+
+	var portal := portals[0] as PortalNode
+	var target_id := portal.target_map
+	var target_cell := portal.target_cell
+	_check(String(game.map.map_id) != target_id, "传送目标不是当前地图（%s）" % target_id)
+
+	# 站到传送点中心，等过了武装时间自动触发。
+	var hero = GameManager.player
+	hero.global_position = portal.global_position
+	for i in 90:
+		await get_tree().physics_frame
+		if String(game.map.map_id) == target_id:
+			break
+	_check(String(game.map.map_id) == target_id,
+			"踩上传送点后切到目标地图（当前 %s）" % game.map.map_id)
+
+	var offset: float = hero.global_position.distance_to(Iso.grid_to_world(target_cell))
+	_check(offset < 2.0, "落在目标落点（偏差 %.1f）" % offset)
+
+	# 落点故意与目标图的传送点隔开两格，且 main 有免疫窗口：不应立刻被弹回。
+	for i in 5:
+		await get_tree().physics_frame
+	_check(String(game.map.map_id) == target_id, "换图后没有被立刻弹回")
+
+	SaveService.map_switcher = Callable()
+	GameManager.player = null
 	remove_child(game)
 	game.queue_free()
 	await get_tree().process_frame
