@@ -22,6 +22,8 @@ var _held := false
 var _disabled := false
 ## 当前持有按钮的手指编号；-1 表示无人持有。
 var _touch_index := -1
+## 技能冷却进度（0 = 就绪，1 = 刚进入冷却），用环形覆盖表示。
+var _cooldown_ratio := 0.0
 
 
 func _ready() -> void:
@@ -62,6 +64,19 @@ func is_disabled() -> bool:
 	return _disabled
 
 
+## 冷却进度：只有技能按钮会用（0 表示不进环形）。
+func set_cooldown(ratio: float) -> void:
+	var next := clampf(ratio, 0.0, 1.0)
+	if is_equal_approx(next, _cooldown_ratio):
+		return
+	_cooldown_ratio = next
+	queue_redraw()
+
+
+func cooldown_ratio() -> float:
+	return _cooldown_ratio
+
+
 func _gui_input(event: InputEvent) -> void:
 	if _disabled:
 		return
@@ -85,7 +100,7 @@ func _press() -> void:
 		return
 	_held = true
 	queue_redraw()
-	# 按下即通知，用于“长按达到秒数触发持续攻击”；动作本身仍只在抬起时触发。
+	# 按下即通知，用于"长按达到秒数触发持续攻击"；动作本身仍只在抬起时触发。
 	# 技能按钮没有「长按连发」语义，按下时什么也不发。
 	if action == "attack":
 		EventBus.attack_pressed.emit()
@@ -111,6 +126,10 @@ func _draw() -> void:
 		fill = Color(0.12, 0.12, 0.14, 0.25)
 	draw_circle(center, radius, fill)
 	draw_arc(center, radius, 0.0, TAU, 40, Color(1.0, 1.0, 1.0, 0.55 * dim), 2.5, true)
+	if _cooldown_ratio > 0.0:
+		var sweep := TAU * _cooldown_ratio
+		draw_arc(center, radius - 4.0, -PI * 0.5, -PI * 0.5 + sweep, 32,
+				Color(0.55, 0.75, 1.0, 0.78), 5.0, true)
 
 	var font := Locale.font
 	# 与 HUD/设置面板同一套文字角色。

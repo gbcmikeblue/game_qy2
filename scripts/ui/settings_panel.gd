@@ -71,6 +71,10 @@ var _view_title: Label
 var _ui_scale_label: Label
 var _ui_scale_value: Label
 var _free_note: Label
+var _audio_title: Label
+var _sfx_toggle: UiButton
+var _sfx_volume_label: Label
+var _sfx_volume_value: Label
 var _preset_buttons: Dictionary = {}
 var _quality_buttons: Dictionary = {}
 var _view_buttons: Dictionary = {}
@@ -91,6 +95,7 @@ func _ready() -> void:
 	GameSettings.bindings_changed.connect(_on_bindings_changed)
 	GameSettings.combat_changed.connect(_refresh_combat)
 	GameSettings.display_changed.connect(_refresh_display)
+	GameSettings.audio_changed.connect(_refresh_audio)
 	DisplayAdapter.layout_changed.connect(_layout)
 	_refresh_texts()
 	_pause_game()
@@ -105,6 +110,8 @@ func _exit_tree() -> void:
 		GameSettings.combat_changed.disconnect(_refresh_combat)
 	if GameSettings.display_changed.is_connected(_refresh_display):
 		GameSettings.display_changed.disconnect(_refresh_display)
+	if GameSettings.audio_changed.is_connected(_refresh_audio):
+		GameSettings.audio_changed.disconnect(_refresh_audio)
 	if DisplayAdapter.layout_changed.is_connected(_layout):
 		DisplayAdapter.layout_changed.disconnect(_layout)
 	_resume_game()
@@ -278,6 +285,28 @@ func _build_display_section() -> void:
 	_free_note = _label(Vector2(28.0, y), Vector2(560.0, 48.0), FONT_HELPER)
 	_free_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
+	# 音频（只做 SFX，BGM 未做）：开关 + 三档音量。
+	y += 56.0
+	_audio_title = _label(Vector2(28.0, y), Vector2(560.0, 32.0), FONT_SECTION)
+	y += 34.0
+	_sfx_toggle = _button(_body, Vector2(28.0, y - 2.0), Vector2(182.0, 36.0))
+	_sfx_toggle.pressed.connect(_on_sfx_toggle)
+	y += 44.0
+	_sfx_volume_label = _label(Vector2(40.0, y), Vector2(280.0, 34.0), FONT_BODY)
+	var vol_minus := _button(_body, Vector2(348.0, y - 2.0), Vector2(44.0, 34.0))
+	vol_minus.set_caption("-")
+	vol_minus.pressed.connect(_on_sfx_volume_step.bind(-1))
+	_sfx_volume_value = _label(Vector2(400.0, y), Vector2(124.0, 34.0), FONT_BODY)
+	_sfx_volume_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var vol_plus := _button(_body, Vector2(532.0, y - 2.0), Vector2(44.0, 34.0))
+	vol_plus.set_caption("+")
+	vol_plus.pressed.connect(_on_sfx_volume_step.bind(1))
+	y += 44.0
+
+	# 内容变长后同步滚动区高度，否则底部音频项会被裁掉。
+	_body.custom_minimum_size = Vector2(BODY_WIDTH, maxf(BODY_HEIGHT, y + 40.0))
+	_body.size = _body.custom_minimum_size
+
 
 ## 建标签：默认加进滚动内容，header/footer 里的固定标签显式传 _panel。
 func _label(position: Vector2, size: Vector2, font_size: int, parent: Control = null) -> Label:
@@ -302,6 +331,27 @@ func _button(parent: Control, position: Vector2, size: Vector2) -> UiButton:
 	return button
 
 
+func _on_sfx_toggle() -> void:
+	GameSettings.toggle_sfx()
+	_refresh_audio()
+
+
+func _on_sfx_volume_step(direction: int) -> void:
+	GameSettings.adjust_sfx_volume(direction)
+	_refresh_audio()
+
+
+## 音频行：开关文案 + 音量百分比（0% 也允许，等同静音）。
+func _refresh_audio() -> void:
+	if _sfx_toggle == null or _sfx_volume_value == null:
+		return
+	var on := bool(GameSettings.audio_value("sfx_enabled"))
+	_sfx_toggle.set_caption(Locale.t("settings.sfx.on" if on else "settings.sfx.off"))
+	_sfx_toggle.set_highlight(on)
+	_sfx_volume_value.text = Locale.t("settings.sfx.volume.value",
+			[int(round(float(GameSettings.audio_value("sfx_volume")) * 100.0))])
+
+
 func _refresh_texts() -> void:
 	_title.text = Locale.t("settings.title")
 	_language_label.text = Locale.t("settings.language")
@@ -312,6 +362,9 @@ func _refresh_texts() -> void:
 	_quality_title.text = Locale.t("display.quality")
 	_view_title.text = Locale.t("display.view")
 	_ui_scale_label.text = Locale.t("display.ui_scale")
+	_audio_title.text = Locale.t("settings.audio")
+	_sfx_volume_label.text = Locale.t("settings.sfx.volume")
+	_refresh_audio()
 
 	for i in _language_buttons.size():
 		var code: String = Locale.SUPPORTED[i]

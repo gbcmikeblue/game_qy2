@@ -25,10 +25,23 @@ var _next := 0
 func _ready() -> void:
 	_build_players()
 	_build_streams()
+	_apply_audio_settings()
 	_connect_events()
+	GameSettings.audio_changed.connect(_apply_audio_settings)
+
+
+## 把设置面板里的开关与音量同步到播放器。0 音量也当作静音处理。
+func _apply_audio_settings() -> void:
+	enabled = bool(GameSettings.audio_value("sfx_enabled"))
+	var volume := float(GameSettings.audio_value("sfx_volume"))
+	volume_db = linear_to_db(volume) if volume > 0.0 else -80.0
+	for player in _players:
+		player.volume_db = volume_db
 
 
 func _exit_tree() -> void:
+	if GameSettings.audio_changed.is_connected(_apply_audio_settings):
+		GameSettings.audio_changed.disconnect(_apply_audio_settings)
 	if EventBus.damage_dealt.is_connected(_on_damage_dealt):
 		EventBus.damage_dealt.disconnect(_on_damage_dealt)
 	if EventBus.item_picked_up.is_connected(_on_item_picked_up):

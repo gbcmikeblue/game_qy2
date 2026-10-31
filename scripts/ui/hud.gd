@@ -148,6 +148,14 @@ func _axis_shift(start_anchor: float, end_anchor: float,
 
 ## 暂停门控（§3.7）：暂停/切后台时主操作按钮置灰且不响应，避免暂停态下误触攻击。
 ## 切后台的暂停由 GameManager 负责，HUD 只消费状态。
+func _update_skill_button() -> void:
+	var player := GameManager.player
+	if not is_instance_valid(player) or not player.has_method("get_skill_cooldown_left"):
+		return
+	var total := maxf(0.001, float(player.skill_cooldown))
+	_skill_button.set_cooldown(clampf(float(player.get_skill_cooldown_left()) / total, 0.0, 1.0))
+
+
 func _update_interaction_gate() -> void:
 	_attack_button.set_disabled(GameManager.is_paused)
 	if _skill_button != null:
@@ -159,6 +167,7 @@ func _process(_delta: float) -> void:
 	_update_lock()
 	_update_action_button()
 	_update_interaction_gate()
+	_update_skill_button()
 	_update_debug()
 
 

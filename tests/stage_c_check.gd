@@ -61,6 +61,7 @@ func _ready() -> void:
 	await _test_quests()
 	await _test_quest_panel()
 	_test_audio()
+	_test_audio_settings()
 	SaveService.autosave_enabled = true
 	InventoryService.reset()
 	_report()
@@ -943,6 +944,51 @@ func _test_audio() -> void:
 	AudioService.enabled = saved
 
 	_check(not AudioService.play("no_such_sound"), "未知音效名安全返回 false")
+
+
+# ---------------- 音频设置：开关 / 音量档位 / 落盘 / 冷却环 ----------------
+
+func _test_audio_settings() -> void:
+	var saved_enabled: Variant = GameSettings.audio_value("sfx_enabled")
+	var saved_volume: Variant = GameSettings.audio_value("sfx_volume")
+
+	_check(bool(GameSettings.audio_value("sfx_enabled")), "音效默认开启")
+
+	GameSettings.toggle_sfx()
+	_check(not bool(GameSettings.audio_value("sfx_enabled")), "开关切换为关闭")
+	_check(not AudioService.enabled and not AudioService.play("hit"),
+			"关闭后 AudioService 不再播放")
+
+	GameSettings.toggle_sfx()
+	_check(AudioService.enabled and AudioService.play("hit"), "重新开启后恢复播放")
+
+	GameSettings.set_audio_value("sfx_volume", 0.0)
+	_check(AudioService.volume_db <= -60.0,
+			"0 音量映射为近乎静音（%.0f dB）" % AudioService.volume_db)
+	GameSettings.adjust_sfx_volume(1)
+	_check(is_equal_approx(float(GameSettings.audio_value("sfx_volume")), 0.5),
+			"音量按档位步进到 50%%（%.2f）" % float(GameSettings.audio_value("sfx_volume")))
+	GameSettings.adjust_sfx_volume(1)
+	GameSettings.adjust_sfx_volume(1)
+	_check(is_equal_approx(float(GameSettings.audio_value("sfx_volume")), 1.0),
+			"音量上限停在 100%%")
+
+	var config := ConfigFile.new()
+	_check(config.load(GameSettings.SAVE_PATH) == OK
+			and config.has_section_key("audio", "sfx_volume"), "音频设置写入配置文件")
+
+	# 冷却环：技能按钮接收 0..1 的比例
+	var button = load("res://scripts/ui/touch_button.gd").new()
+	add_child(button)
+	button.set_cooldown(0.5)
+	_check(is_equal_approx(button.cooldown_ratio(), 0.5), "冷却环比例可设置（0.50）")
+	button.set_cooldown(1.7)
+	_check(is_equal_approx(button.cooldown_ratio(), 1.0), "冷却环比例上限夹紧到 1.0")
+	remove_child(button)
+	button.queue_free()
+
+	GameSettings.set_audio_value("sfx_enabled", saved_enabled)
+	GameSettings.set_audio_value("sfx_volume", saved_volume)
 
 
 func _make_entry(item_id: StringName, chance: float, low: int, high: int) -> LootEntry:

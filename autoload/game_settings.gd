@@ -9,11 +9,14 @@ signal bindings_changed
 signal combat_changed
 ## 显示配置（分辨率档位 / 画质档 / UI 缩放 / 视野档）变化，由 DisplayAdapter 消费。
 signal display_changed
+## 音频（SFX）设置变化。
+signal audio_changed
 
 const SAVE_PATH := "user://keybindings.cfg"
 const SECTION := "input"
 const COMBAT_SECTION := "combat"
 const DISPLAY_SECTION := "display"
+const AUDIO_SECTION := "audio"
 const ACTIONS := ["move_up", "move_down", "move_left", "move_right", "attack"]
 const DEFAULTS := {
 	"move_up": KEY_W,
@@ -23,7 +26,7 @@ const DEFAULTS := {
 	"attack": KEY_J,
 }
 
-## 可在“设置 → 玩家战斗”里调整的阈值；默认值来自 data/actors/player.json。
+## 可在"设置 → 玩家战斗"里调整的阈值；默认值来自 data/actors/player.json。
 const COMBAT_KEYS := ["auto_attack_hold_seconds", "auto_attack_tap_count"]
 const COMBAT_LIMITS := {
 	"auto_attack_hold_seconds": {"min": 0.3, "max": 2.5, "step": 0.1},
@@ -41,17 +44,23 @@ const QUALITY_TIERS := ["auto", "low", "medium", "high"]
 ## 界面缩放上限 1.2：再大时左下角血条会被推上去与调试信息重叠（HUD 720 逻辑高度装不下）。
 const UI_SCALES := [0.9, 1.0, 1.1, 1.2]
 const VIEW_SCALE_VALUES := [0.8, 1.0, 1.25]
+## 音效三档音量（0 等同静音，配合开关使用）。
+const SFX_VOLUMES := [0.0, 0.5, 1.0]
+const AUDIO_DEFAULTS := {"sfx_enabled": true, "sfx_volume": 0.5}
 
 var bindings: Dictionary = {}
 ## 用户覆盖值（未设置时用 JSON 里的设计默认值）。
 var combat: Dictionary = {}
 ## 显示配置；非法值在读取与写入时都会被吸附到最近的合法枚举。
 var display: Dictionary = {}
+## 音频配置：sfx_enabled / sfx_volume（音量吸附到三档）。
+var audio: Dictionary = {}
 
 
 func _ready() -> void:
 	reset_to_defaults_quietly()
 	display = DISPLAY_DEFAULTS.duplicate()
+	audio = AUDIO_DEFAULTS.duplicate()
 	load_from_disk()
 	apply()
 
@@ -193,6 +202,47 @@ func reset_display() -> void:
 	display_changed.emit()
 
 
+## ---------------- 音频 ----------------
+
+func audio_value(key: String) -> Variant:
+	return audio.get(key, AUDIO_DEFAULTS.get(key))
+
+
+func set_audio_value(key: String, value: Variant) -> void:
+	match key:
+		"sfx_enabled":
+			audio[key] = bool(value)
+		"sfx_volume":
+			audio[key] = _snap_to(clampf(float(value), 0.0, 1.0), SFX_VOLUMES)
+		_:
+			return
+	save_to_disk()
+	audio_changed.emit()
+
+
+func toggle_sfx() -> bool:
+	set_audio_value("sfx_enabled", not bool(audio_value("sfx_enabled")))
+	return bool(audio_value("sfx_enabled"))
+
+
+## 音量按档位步进（-1 减、+1 增），到边界不循环。
+func adjust_sfx_volume(direction: int) -> void:
+	var current := float(audio_value("sfx_volume"))
+	var index := 0
+	for i in SFX_VOLUMES.size():
+		if is_equal_approx(float(SFX_VOLUMES[i]), current):
+			index = i
+			break
+	index = clampi(index + direction, 0, SFX_VOLUMES.size() - 1)
+	set_audio_value("sfx_volume", SFX_VOLUMES[index])
+
+
+func reset_audio() -> void:
+	audio = AUDIO_DEFAULTS.duplicate()
+	save_to_disk()
+	audio_changed.emit()
+
+
 ## 非法值一律吸附到最近的合法枚举，避免手改配置把界面搞坏。
 func _normalize_display(key: String, value: Variant) -> Variant:
 	match key:
@@ -226,6 +276,8 @@ func save_to_disk() -> void:
 			config.set_value(COMBAT_SECTION, key, float(combat[key]))
 	for key: String in DISPLAY_DEFAULTS:
 		config.set_value(DISPLAY_SECTION, key, display.get(key, DISPLAY_DEFAULTS[key]))
+	for key: String in AUDIO_DEFAULTS:
+		config.set_value(AUDIO_SECTION, key, audio.get(key, AUDIO_DEFAULTS[key]))
 	config.save(SAVE_PATH)
 
 
@@ -246,6 +298,14 @@ func load_from_disk() -> void:
 		if not config.has_section_key(DISPLAY_SECTION, key):
 			continue
 		display[key] = _normalize_display(key, config.get_value(DISPLAY_SECTION, key))
+	for key: String in AUDIO_DEFAULTS:
+		if not config.has_section_key(AUDIO_SECTION, key):
+			continue
+		match key:
+			"sfx_enabled":
+				audio[key] = bool(config.get_value(AUDIO_SECTION, key))
+			"sfx_volume":
+				audio[key] = _snap_to(float(config.get_value(AUDIO_SECTION, key)), SFX_VOLUMES)
 
 
 ## 移动键汇总文本，用于 HUD 提示（例如 W/A/S/D）。
