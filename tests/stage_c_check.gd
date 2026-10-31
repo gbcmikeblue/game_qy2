@@ -804,13 +804,28 @@ func _test_npc() -> void:
 	for node: Node in game.map.get_entity_root().get_children():
 		if node is NpcNode:
 			npcs.append(node)
-	_check(npcs.size() == 1, "test_map_01 有 1 个 NPC（实际 %d）" % npcs.size())
-	if npcs.is_empty():
+	_check(npcs.size() == 2, "test_map_01 有 2 个 NPC（实际 %d）" % npcs.size())
+	if npcs.size() < 2:
 		remove_child(game)
 		game.queue_free()
 		return
 
-	var npc := npcs[0] as NpcNode
+	# 一个只发任务（村长，无商店），一个只卖货（商人，不发任务）。
+	var giver: NpcNode = null
+	var seller: NpcNode = null
+	for node: Node in npcs:
+		var npc_node := node as NpcNode
+		if npc_node.quest_giver:
+			giver = npc_node
+		elif npc_node.shop_id != &"":
+			seller = npc_node
+	_check(giver != null and seller != null, "地图里同时存在任务发布者与商人")
+	if giver == null or seller == null:
+		remove_child(game)
+		game.queue_free()
+		return
+
+	var npc := giver
 	var hero = GameManager.player
 
 	# 远处：不可交互，主操作仍是攻击
@@ -837,10 +852,11 @@ func _test_npc() -> void:
 	_check(dialogue != null and is_instance_valid(dialogue), "交互后打开了对话面板")
 	if dialogue != null and is_instance_valid(dialogue):
 		_check(not dialogue.body_text().is_empty(), "对话面板有台词（%s）" % dialogue.body_text())
-		_check(dialogue.action_at(0) == "trade", "第一个动作是交易（%s）" % dialogue.action_at(0))
+		# 村长没有商店：只有「任务 / 离开」
+		_check(dialogue.action_at(0) == "quests", "任务发布者第一个动作是任务（%s）" % dialogue.action_at(0))
+		_check(dialogue.action_count() == 2, "任务发布者没有交易入口（%d 个动作）" % dialogue.action_count())
 		_check(dialogue.action_at(dialogue.action_count() - 1) == "leave",
 				"最后一个动作是离开（%s）" % dialogue.action_at(dialogue.action_count() - 1))
-		_check(dialogue.action_at(1) == "quests", "商人兼发任务，第二个动作是任务列表（%s）" % dialogue.action_at(1))
 
 		# 进任务列表：3 条可接 + 返回，玩家自己选（不再默认取第一条）
 		_check(dialogue.press_action("quests"), "点任务进入列表")
@@ -852,14 +868,23 @@ func _test_npc() -> void:
 				"列表最后是返回（%s）" % dialogue.action_at(dialogue.action_count() - 1))
 
 		# 选第二条（野猪），验证「选谁就接谁」
+		var idle_text: String = dialogue.body_text()
 		_check(dialogue.press_action("accept:quest_boar_hunt"), "选接野猪任务")
 		_check(QuestService.active_id == "quest_boar_hunt",
 				"接取的是被点的那条（%s）" % QuestService.active_id)
+		_check(dialogue.body_text() == Locale.t("npc.elder.dialogue.active"),
+				"接取后台词切到「进行中」（%s）" % dialogue.body_text())
+		_check(idle_text != dialogue.body_text(), "台词确实随状态变化过")
 		_check(dialogue.action_at(dialogue.action_count() - 1) == "leave",
 				"接取后回到主菜单（%s）" % dialogue.action_at(dialogue.action_count() - 1))
 
 		# 达标后列表顶部出现「交付」，点它就结算发奖
 		QuestService.progress["quest_boar_hunt"] = QuestService.current_required()
+		# 直接改进度不会发信号，这里手动广播一次，模拟「击杀达标瞬间」。
+		EventBus.quest_updated.emit("quest_boar_hunt", QuestService.current_required(),
+				QuestService.current_required())
+		_check(dialogue.body_text() == Locale.t("npc.elder.dialogue.turn_in"),
+				"达标后台词切到「可交付」（%s）" % dialogue.body_text())
 		_check(dialogue.press_action("quests"), "再次进入任务列表")
 		_check(dialogue.action_at(0) == "turn_in:quest_boar_hunt",
 				"达标任务排在最前（%s）" % dialogue.action_at(0))
@@ -869,8 +894,27 @@ func _test_npc() -> void:
 		_check(InventoryService.gold > gold_before,
 				"交付发放奖励（%d → %d）" % [gold_before, InventoryService.gold])
 
+		# 村长没有交易入口，直接关掉
+		dialogue.close_panel()
+		await get_tree().process_frame
+
+	# 商人：只有「交易 / 离开」，没有任务入口
+	hero.global_position = seller.global_position + Vector2(20.0, 0.0)
+	await get_tree().physics_frame
+	hero.perform_action()
+	await get_tree().process_frame
+	var seller_dialogue = game._dialogue_panel
+	_check(seller_dialogue != null and is_instance_valid(seller_dialogue), "靠近商人也能开对话")
+	if seller_dialogue != null and is_instance_valid(seller_dialogue):
+		_check(seller_dialogue.action_at(0) == "trade",
+				"商人第一个动作是交易（%s）" % seller_dialogue.action_at(0))
+		_check(seller_dialogue.action_at(seller_dialogue.action_count() - 1) == "leave",
+				"商人没有任务入口，末项是离开（%s）"
+						% seller_dialogue.action_at(seller_dialogue.action_count() - 1))
+		_check(not seller_dialogue.press_action("quests"), "商人点不到任务列表")
+
 		# 点交易 → 关对话 + 开商店面板（落在商店页）
-		_check(dialogue.press_action("trade"), "点交易")
+		_check(seller_dialogue.press_action("trade"), "点交易")
 		await get_tree().process_frame
 		var shop_panel = game._shop_panel
 		_check(shop_panel != null and is_instance_valid(shop_panel), "交易后打开了商店面板")

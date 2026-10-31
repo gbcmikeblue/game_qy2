@@ -5,7 +5,8 @@
   "road_u": [9, 10],
   "player_spawn": [10, 10],
   "npcs": [
-    { "u": 4, "v": 8, "shop": "basic", "name_key": "npc.merchant.name", "dialogue": "npc.merchant.dialogue", "quest_giver": true }
+    { "u": 4, "v": 8, "shop": "basic", "name_key": "npc.merchant.name", "dialogue": "npc.merchant.dialogue" },
+    { "u": 14, "v": 14, "name_key": "npc.elder.name", "dialogue": "npc.elder.dialogue", "dialogue_states": { "active": "npc.elder.dialogue.active", "turn_in": "npc.elder.dialogue.turn_in" }, "quest_giver": true }
   ],
   "portals": [
     { "u": 10, "v": 12, "target": "test_map_01", "tu": 16, "tv": 5 }

@@ -159,6 +159,11 @@ func _refresh_texts() -> void:
 	var name_key := speaker_name_key if not speaker_name_key.is_empty() else "npc.merchant.name"
 	_name_label.text = Locale.t(name_key)
 	var body := dialogue_key if not dialogue_key.is_empty() else "dialogue.default"
+	# 任务发布者的台词随状态变化（未接 / 进行中 / 可交付），实时向 NPC 取。
+	if npc != null and is_instance_valid(npc) and npc.has_method("current_dialogue_key"):
+		var live := String(npc.current_dialogue_key())
+		if not live.is_empty():
+			body = live
 	_body_label.text = Locale.t(body)
 
 
@@ -263,6 +268,8 @@ func _on_language_changed() -> void:
 
 ## 任务进度变化（例如在对话中交付后）也要刷新按钮可用性。
 func _on_quest_changed(_quest_id: String, _current: int, _required: int) -> void:
+	# 接取/交付会同时改变台词与按钮，两样都要刷。
+	_refresh_texts()
 	_refresh_actions()
 
 

@@ -19,16 +19,20 @@ var shop_id: StringName = &"basic"
 var display_name_key := "npc.merchant.name"
 ## 对话台词 key（对话框正文）；空则用通用台词。
 var dialogue_key := ""
-## 是否发布任务（对话框据此显示「接取 / 交付」）。
+## 是否发布任务（对话框据此显示「任务」入口）。
 var quest_giver := false
+## 分状态台词：idle / active / turn_in；缺省回落到 dialogue_key。
+var dialogue_states: Dictionary = {}
 
 
-func setup(p_shop_id: StringName, p_name_key: String, p_dialogue_key := "", p_quest_giver := false) -> void:
+func setup(p_shop_id: StringName, p_name_key: String, p_dialogue_key := "", p_quest_giver := false,
+		p_dialogue_states: Dictionary = {}) -> void:
 	shop_id = p_shop_id
 	if not p_name_key.is_empty():
 		display_name_key = p_name_key
 	dialogue_key = p_dialogue_key
 	quest_giver = p_quest_giver
+	dialogue_states = p_dialogue_states
 	queue_redraw()
 
 
@@ -38,6 +42,21 @@ func _ready() -> void:
 
 func get_target_kind() -> String:
 	return kind
+
+
+## 当前该说哪句：有可交付 → turn_in；有进行中 → active；否则 idle。
+## 只对任务发布者生效，普通商人永远说 dialogue_key。
+func current_dialogue_key() -> String:
+	if quest_giver:
+		var state := "idle"
+		if not QuestService.turn_in_quests().is_empty():
+			state = "turn_in"
+		elif not QuestService.active_id.is_empty():
+			state = "active"
+		var key := String(dialogue_states.get(state, ""))
+		if not key.is_empty():
+			return key
+	return dialogue_key
 
 
 func is_player_near() -> bool:
