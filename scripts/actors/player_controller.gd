@@ -45,7 +45,12 @@ var mp_regen := 2.0
 ## 技能冷却表：skill_id -> 剩余秒数。参数（耗蓝/冷却/倍率/范围）全部来自技能表。
 var _skill_cd: Dictionary = {}
 var _mp_frac := 0.0
+# 击退速度：由敌人技能施加，逐帧衰减，叠加在输入位移之上。
+var _knockback := Vector2.ZERO
 ## 技能飘字配色（三种状态一眼可分）。
+## 击退衰减速度（px/s²）与停止阈值：够快衰减才不会像滑冰。
+const KNOCKBACK_DECAY := 900.0
+const KNOCKBACK_STOP := 12.0
 const COLOR_COOLING := Color(0.75, 0.75, 0.85)
 const COLOR_NO_MP := Color(0.55, 0.65, 0.95)
 const COLOR_HIT := Color(1.0, 0.85, 0.55)
@@ -205,6 +210,18 @@ func heal(amount: int) -> void:
 func set_hp(value: int) -> void:
 	if _health != null:
 		_health.set_hp(value)
+
+
+## 击退：由敌人技能调用（野猪冲撞等）。方向为零时忽略。
+## 击退不做位移作弊，叠进 velocity 交给 move_and_slide，因此撞墙会停。
+func apply_knockback(direction: Vector2, strength: float) -> void:
+	if _dead or direction.length() < 0.001 or strength <= 0.0:
+		return
+	_knockback = direction.normalized() * strength
+
+
+func get_knockback_speed() -> float:
+	return _knockback.length()
 
 
 ## 换图前清空锁定/仇恨残留：旧图的敌人马上要被释放，不能留下悬空引用。
@@ -576,6 +593,12 @@ func _physics_process(delta: float) -> void:
 	var target_speed := direction * max_speed
 	var rate := acceleration if direction.length() > 0.01 else deceleration
 	velocity = velocity.move_toward(target_speed, rate * delta)
+	# 击退叠加在输入位移之上并逐帧衰减：被野猪撞开时仍能反向走回来。
+	if _knockback.length() > KNOCKBACK_STOP:
+		velocity += _knockback
+		_knockback = _knockback.move_toward(Vector2.ZERO, KNOCKBACK_DECAY * delta)
+	else:
+		_knockback = Vector2.ZERO
 	move_and_slide()
 
 	# 移动输入已在上面取消持续攻击，这里只处理"触发/维持"。

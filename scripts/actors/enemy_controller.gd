@@ -40,6 +40,11 @@ var skill_cooldown := 0.0
 var skill_range := 0.0
 var skill_multiplier := 1.0
 var skill_windup := 0.4
+# 技能位移：strike 原地、charge 向前突进、dash 换位到目标侧后。
+var skill_motion := "strike"
+var charge_distance := 0.0
+var knockback_strength := 0.0
+var dash_offset := 0.0
 
 var _map
 var _health: HealthComponent
@@ -148,6 +153,10 @@ func _apply_def() -> void:
 		skill_range = float(skill_def.get("range", attack_range * 2.5))
 		skill_multiplier = float(skill_def.get("multiplier", 1.6))
 		skill_windup = float(skill_def.get("windup", 0.45))
+		skill_motion = String(skill_def.get("motion", "strike"))
+		charge_distance = float(skill_def.get("charge_distance", 0.0))
+		knockback_strength = float(skill_def.get("knockback", 0.0))
+		dash_offset = float(skill_def.get("dash_offset", 0.0))
 
 
 func _apply_body_radius(radius: float) -> void:
@@ -248,6 +257,7 @@ func cast_skill() -> int:
 	var target := _get_target()
 	if target == null:
 		return 0
+	_apply_skill_motion(target)
 	var result := CombatService.strike(self, target, {
 		"attack": attack * skill_multiplier,
 		"max_range": skill_range,
@@ -256,11 +266,44 @@ func cast_skill() -> int:
 	})
 	if not bool(result["hit"]):
 		return 0
+	# 冲撞类技能把玩家顶开：位移由玩家自己走 move_and_slide，撞墙会停。
+	if knockback_strength > 0.0 and target.has_method("apply_knockback"):
+		var push := target.global_position - global_position
+		target.apply_knockback(push, knockback_strength)
+
 	var name_key := String(skill_def.get("name_key", ""))
 	if not name_key.is_empty():
 		CombatFx.show_text(global_position + Vector2(0.0, -34.0), Locale.t(name_key),
 				Color(1.0, 0.62, 0.35))
 	return 1
+
+
+## 起手瞬间的位移：让三招在「站在哪」这件事上不一样。
+## charge 向前突进（撞墙/障碍就停在原地），dash 换位到目标侧后，strike 原地不动。
+func _apply_skill_motion(target: Node2D) -> void:
+	if skill_motion == "charge" and charge_distance > 0.0:
+		var dir := (target.global_position - global_position)
+		if dir.length() < 0.001:
+			return
+		var next := global_position + dir.normalized() * charge_distance
+		if _is_free_position(next):
+			global_position = next
+	elif skill_motion == "dash" and dash_offset > 0.0:
+		# 侧后换位：绕到目标斜后方，逼玩家转身，而不是单纯贴脸。
+		var away := (global_position - target.global_position)
+		if away.length() < 0.001:
+			away = Vector2.LEFT
+		var flank := away.normalized().rotated(PI * 0.5) * dash_offset
+		var next := target.global_position + flank + away.normalized() * dash_offset * 0.5
+		if _is_free_position(next):
+			global_position = next
+
+
+## 目标点是否可站立（不撞墙、不撞障碍）。
+func _is_free_position(pos: Vector2) -> bool:
+	if _map == null or not _map.has_method("is_blocked"):
+		return true
+	return not _map.is_blocked(Iso.world_to_grid(pos))
 
 
 func _tick_attack(delta: float) -> void:

@@ -56,6 +56,7 @@ func _ready() -> void:
 	await _test_skill()
 	await _test_whirlwind()
 	await _test_enemy_skill()
+	await _test_enemy_skill_motion()
 	_test_health_component()
 	_test_pathfinding()
 	await _test_fsm()
@@ -330,6 +331,64 @@ func _test_enemy_skill() -> void:
 
 	_clear_enemies()
 	await get_tree().physics_frame
+	_player.set_hp(_player.get_max_hp())
+
+
+## 三招在「站位」上的差异：strike 不动、charge 突进并击退、dash 换位贴身。
+func _test_enemy_skill_motion() -> void:
+	_clear_enemies()
+	await get_tree().physics_frame
+	await _ensure_player_alive()
+	_player.global_position = _map.spawn_world_position()
+	_player.velocity = Vector2.ZERO
+	_player._knockback = Vector2.ZERO
+	InputManager.touch_vector = Vector2.ZERO
+	await get_tree().physics_frame
+
+	# 1) 狼·扑咬：原地起手，自身不位移
+	var wolf = _map.spawn_enemy("forest_wolf", Vector2i(10, 14))
+	wolf.set_physics_process(false)
+	wolf.global_position = _player.global_position + Vector2(100.0, 0.0)
+	var wolf_before: Vector2 = wolf.global_position
+	wolf._skill_cd_left = 0.0
+	_player._invuln_left = 0.0
+	_player.set_hp(_player.get_max_hp())
+	wolf.cast_skill()
+	_check(wolf.global_position.distance_to(wolf_before) < 0.5,
+			"扑咬是原地起手（自身位移 %.1f）" % wolf.global_position.distance_to(wolf_before))
+
+	# 2) 野猪·冲撞：突进 + 把玩家顶开
+	var boar = _map.spawn_enemy("stone_boar", Vector2i(10, 14))
+	boar.set_physics_process(false)
+	boar.global_position = _player.global_position + Vector2(100.0, 0.0)
+	var boar_before: float = boar.global_position.distance_to(_player.global_position)
+	boar._skill_cd_left = 0.0
+	_player._invuln_left = 0.0
+	_player.set_hp(_player.get_max_hp())
+	_player._knockback = Vector2.ZERO
+	boar.cast_skill()
+	var boar_after: float = boar.global_position.distance_to(_player.global_position)
+	_check(boar_after < boar_before - 20.0,
+			"冲撞会突进（距离 %.0f → %.0f）" % [boar_before, boar_after])
+	_check(_player.get_knockback_speed() > 0.0,
+			"冲撞把玩家顶开（%.0f px/s）" % _player.get_knockback_speed())
+
+	# 3) 蝙蝠·俯冲：换位到玩家侧后，距离明显收缩
+	var bat = _map.spawn_enemy("cave_bat", Vector2i(10, 14))
+	bat.set_physics_process(false)
+	bat.global_position = _player.global_position + Vector2(140.0, 0.0)
+	var bat_before: float = bat.global_position.distance_to(_player.global_position)
+	bat._skill_cd_left = 0.0
+	_player._invuln_left = 0.0
+	_player.set_hp(_player.get_max_hp())
+	bat.cast_skill()
+	var bat_after: float = bat.global_position.distance_to(_player.global_position)
+	_check(bat_after < bat_before * 0.6,
+			"俯冲会贴到玩家身边（距离 %.0f → %.0f）" % [bat_before, bat_after])
+
+	_clear_enemies()
+	await get_tree().physics_frame
+	_player._knockback = Vector2.ZERO
 	_player.set_hp(_player.get_max_hp())
 
 
