@@ -353,3 +353,5 @@ func _on_died() -> void:
 		_visual.set_locked(false)
 	remove_from_group("enemies")
 	EventBus.enemy_died.emit(enemy_id)
+	# 掉落服务据此生成地面物并结算金币/经验（携带死亡坐标）。
+	EventBus.enemy_defeated.emit(enemy_id, global_position)

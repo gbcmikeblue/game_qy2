@@ -1,4 +1,4 @@
-﻿{
+{
   "lang.en": "EN",
   "lang.zh": "中文",
   "button.settings": "SET",
@@ -89,6 +89,8 @@
   "display.free_resize": "Debug build: window resizes freely; tiers are just reference sizes.",
 
   "class.warrior.name": "Warrior",
+
+  "inventory.full": "Inventory full",
 
   "item.con_medkit.name": "Medkit",
   "item.con_medkit.desc": "Restores a little HP.",

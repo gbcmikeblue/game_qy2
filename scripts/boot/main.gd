@@ -12,11 +12,13 @@ const PLAYER_SCENE := preload("res://scenes/actors/player/player.tscn")
 const HUD_SCENE := preload("res://scenes/ui/hud.tscn")
 const WORLD_VIEW := preload("res://scenes/boot/world_view.tscn")
 const TARGET_PICKER := preload("res://scripts/input/target_picker.gd")
+const LOOT_SERVICE := preload("res://scripts/items/loot_service.gd")
 
 var map
 var player
 var world_view
 var world: SubViewport
+var loot_service: Node
 
 
 func _ready() -> void:
@@ -36,6 +38,7 @@ func _ready() -> void:
 	player.setup_navigation(map)
 	GameManager.player = player
 
+	_build_loot_service()
 	_apply_camera_limits()
 	# 世界点击拾取：选中只改选中状态，攻击由 ATK 按钮/攻击键单独触发。
 	var picker := Node.new()
@@ -59,6 +62,15 @@ func _build_world_view() -> void:
 	world_view = WORLD_VIEW.instantiate()
 	add_child(world_view)
 	world = world_view.view
+
+
+## 掉落服务：监听敌人死亡，生成地面掉落物并结算金币/经验。
+## 掉落物挂在实体容器里，跟随 y_sort 遮挡。
+func _build_loot_service() -> void:
+	loot_service = LOOT_SERVICE.new()
+	loot_service.name = "LootService"
+	loot_service.entity_root = map.get_entity_root()
+	add_child(loot_service)
 
 
 func _build_fx_layer() -> void:

@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="LootTable" format=3]
+
+[ext_resource type="Script" path="res://scripts/items/loot_entry.gd" id="1_x86bp"]
+[ext_resource type="Resource" path="res://data/items/items/con_mana_draught.tres" id="2_55vxu"]
+[ext_resource type="Resource" path="res://data/items/items/mat_wolf_fang.tres" id="3_8i4ll"]
+[ext_resource type="Script" path="res://scripts/items/loot_table.gd" id="4_vxbkn"]
+
+[sub_resource type="Resource" id="Resource_f75ju"]
+script = ExtResource("1_x86bp")
+item = ExtResource("2_55vxu")
+chance = 0.15
+
+[sub_resource type="Resource" id="Resource_t4qnk"]
+script = ExtResource("1_x86bp")
+item = ExtResource("3_8i4ll")
+chance = 0.3
+
+[resource]
+script = ExtResource("4_vxbkn")
+id = &"bat_basic"
+entries = Array[ExtResource("1_x86bp")]([SubResource("Resource_f75ju"), SubResource("Resource_t4qnk")])
+gold_min = 1
+gold_max = 4

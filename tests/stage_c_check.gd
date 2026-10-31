@@ -7,8 +7,24 @@ extends Node
 
 const ITEMS_DIR := "res://data/items/items"
 const LOOT_DIR := "res://data/items/loot"
+const LOOT_SERVICE := preload("res://scripts/items/loot_service.gd")
 
 var _failures: Array[String] = []
+
+
+## 掉落管线的假玩家：只需要位置与生死，不依赖真实角色场景。
+class DummyTarget extends Node2D:
+	var hp := 100
+
+	func is_alive() -> bool:
+		return hp > 0
+
+	func take_damage(amount: int, _source: Node = null) -> bool:
+		hp = maxi(0, hp - amount)
+		return true
+
+	func get_defense() -> float:
+		return 0.0
 
 
 func _ready() -> void:
@@ -23,6 +39,10 @@ func _ready() -> void:
 	_test_equipment_swap()
 	_test_unequip_full_bag()
 	_test_level_growth()
+	_test_loot_determinism()
+	_test_loot_chance()
+	_test_loot_guaranteed()
+	await _test_kill_to_inventory()
 	InventoryService.reset()
 	_report()
 
@@ -204,6 +224,123 @@ func _test_level_growth() -> void:
 	_check(is_equal_approx(float(after["max_mp"]) - float(before["max_mp"]), 4.0),
 			"升级后魔法上限 +4（%.0f → %.0f）" % [float(before["max_mp"]), float(after["max_mp"])])
 	_check(InventoryService.exp < InventoryService.exp_to_next(), "溢出经验结转到下一级")
+
+
+# ---------------- 11–13. 掉落表 ----------------
+
+func _test_loot_determinism() -> void:
+	var table := ItemRegistry.get_loot(&"wolf_basic")
+	_check(table != null, "取到 wolf_basic 掉落表")
+	if table == null:
+		return
+	var first := table.roll(_seeded(12345))
+	var second := table.roll(_seeded(12345))
+	_check(_roll_signature(first) == _roll_signature(second),
+			"固定种子下掉落结果可复现（%s）" % _roll_signature(first))
+	_check(not first["items"].is_empty(), "wolf_basic 至少掉一件（guaranteed）")
+
+
+func _test_loot_chance() -> void:
+	var never := LootTable.new()
+	never.entries.append(_make_entry(&"con_medkit", 0.0, 1, 1))
+	var always := LootTable.new()
+	always.entries.append(_make_entry(&"con_medkit", 1.0, 1, 1))
+
+	var rng := _seeded(7)
+	var never_hits := 0
+	var always_hits := 0
+	for i in 50:
+		if not never.roll(rng)["items"].is_empty():
+			never_hits += 1
+		if not always.roll(rng)["items"].is_empty():
+			always_hits += 1
+	_check(never_hits == 0, "chance=0 的条目永不掉落（命中 %d/50）" % never_hits)
+	_check(always_hits == 50, "chance=1 的条目每次都掉（命中 %d/50）" % always_hits)
+
+
+func _test_loot_guaranteed() -> void:
+	var table := LootTable.new()
+	table.rolls = 0
+	table.guaranteed.append(_make_entry(&"mat_wolf_fang", 1.0, 2, 3))
+	var rng := _seeded(99)
+	var in_range := 0
+	for i in 30:
+		var qty := _qty_of(table.roll(rng)["items"], &"mat_wolf_fang")
+		if qty >= 2 and qty <= 3:
+			in_range += 1
+	_check(in_range == 30, "guaranteed 每次必出且数量落在 [2,3]（%d/30）" % in_range)
+
+
+# ---------------- 20. 集成：击杀 → 掉落 → 自动拾取 ----------------
+
+func _test_kill_to_inventory() -> void:
+	InventoryService.reset()
+	var dummy := DummyTarget.new()
+	add_child(dummy)
+	# 用 player_provider 注入假玩家：这正是 Q04 重构留下的接缝。
+	GameManager.player_provider = func() -> Node2D: return dummy
+
+	var root := Node2D.new()
+	add_child(root)
+	var service: Node = LOOT_SERVICE.new()
+	service.name = "TestLootService"
+	service.seed_override = 2026
+	service.entity_root = root
+	add_child(service)
+
+	var picked: Array = []
+	var on_picked := func(_id: String, _qty: int) -> void: picked.append(true)
+	EventBus.item_picked_up.connect(on_picked)
+
+	var drops: int = service.settle("forest_wolf", Vector2.ZERO)
+	_check(drops >= 1, "击杀森林狼至少生成 1 个掉落物（%d）" % drops)
+	_check(InventoryService.gold >= 2 and InventoryService.gold <= 5,
+			"金币按表入账（2–5，实际 %d）" % InventoryService.gold)
+	_check(InventoryService.exp == 12, "经验按敌人配置入账（exp=%d）" % InventoryService.exp)
+
+	# 假玩家就站在掉落点上，下一帧应自动拾取（保证掉落物必掉一件狼牙）。
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check(InventoryService.count_of(&"mat_wolf_fang") >= 1,
+			"靠近后自动拾取进背包（狼牙 %d）" % InventoryService.count_of(&"mat_wolf_fang"))
+	_check(not picked.is_empty(), "拾取时广播 item_picked_up（%d 次）" % picked.size())
+
+	GameManager.player_provider = Callable()
+	if EventBus.item_picked_up.is_connected(on_picked):
+		EventBus.item_picked_up.disconnect(on_picked)
+	service.queue_free()
+	root.queue_free()
+	dummy.queue_free()
+
+
+func _make_entry(item_id: StringName, chance: float, low: int, high: int) -> LootEntry:
+	var entry := LootEntry.new()
+	entry.item = ItemRegistry.get_item(item_id)
+	entry.chance = chance
+	entry.min_qty = low
+	entry.max_qty = high
+	return entry
+
+
+func _seeded(value: int) -> RandomNumberGenerator:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = value
+	return rng
+
+
+func _roll_signature(result: Dictionary) -> String:
+	var parts: Array[String] = []
+	for entry: Dictionary in result["items"]:
+		parts.append("%s×%d" % [entry["id"], int(entry["qty"])])
+	parts.sort()
+	return "%s|g%d" % [",".join(parts), int(result["gold"])]
+
+
+func _qty_of(entries: Array, item_id: StringName) -> int:
+	for entry: Dictionary in entries:
+		if entry["id"] == item_id:
+			return int(entry["qty"])
+	return 0
 
 
 # ---------------- 附加：文案覆盖（中英都要有） ----------------

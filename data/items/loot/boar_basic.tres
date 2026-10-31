@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="LootTable" format=3]
+
+[ext_resource type="Script" path="res://scripts/items/loot_entry.gd" id="1_jx7mi"]
+[ext_resource type="Resource" path="res://data/items/items/con_ration.tres" id="2_vp41y"]
+[ext_resource type="Resource" path="res://data/items/items/shl_wooden.tres" id="3_210qf"]
+[ext_resource type="Resource" path="res://data/items/items/mat_boar_hide.tres" id="4_v4dgx"]
+[ext_resource type="Script" path="res://scripts/items/loot_table.gd" id="5_ur8op"]
+
+[sub_resource type="Resource" id="Resource_v07qq"]
+script = ExtResource("1_jx7mi")
+item = ExtResource("2_vp41y")
+chance = 0.25
+
+[sub_resource type="Resource" id="Resource_u3dlg"]
+script = ExtResource("1_jx7mi")
+item = ExtResource("3_210qf")
+chance = 0.04
+
+[sub_resource type="Resource" id="Resource_unxy2"]
+script = ExtResource("1_jx7mi")
+item = ExtResource("4_v4dgx")
+max_qty = 2
+
+[resource]
+script = ExtResource("5_ur8op")
+id = &"boar_basic"
+entries = Array[ExtResource("1_jx7mi")]([SubResource("Resource_v07qq"), SubResource("Resource_u3dlg")])
+guaranteed = Array[ExtResource("1_jx7mi")]([SubResource("Resource_unxy2")])
+gold_min = 3
+gold_max = 7

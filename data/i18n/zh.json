@@ -1,4 +1,4 @@
-﻿{
+{
   "lang.en": "EN",
   "lang.zh": "中文",
   "button.settings": "设置",
@@ -89,6 +89,8 @@
   "display.free_resize": "调试构建：窗口可自由缩放，档位只作参考尺寸。",
 
   "class.warrior.name": "战士",
+
+  "inventory.full": "背包已满",
 
   "item.con_medkit.name": "医疗包",
   "item.con_medkit.desc": "恢复少量生命。",

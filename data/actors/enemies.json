@@ -1,4 +1,4 @@
-﻿{
+{
   "enemies": [
     {
       "id": "forest_wolf",
@@ -14,6 +14,7 @@
       "deaggro_radius": 380.0,
       "patrol_radius": 70.0,
       "exp": 12,
+      "loot": "wolf_basic",
       "body_radius": 11.0,
       "color": [0.42, 0.44, 0.48]
     },
@@ -31,6 +32,7 @@
       "deaggro_radius": 360.0,
       "patrol_radius": 60.0,
       "exp": 20,
+      "loot": "boar_basic",
       "body_radius": 14.0,
       "color": [0.45, 0.36, 0.30]
     },
@@ -48,6 +50,7 @@
       "deaggro_radius": 400.0,
       "patrol_radius": 90.0,
       "exp": 9,
+      "loot": "bat_basic",
       "body_radius": 9.0,
       "color": [0.35, 0.28, 0.42]
     }

@@ -195,6 +195,16 @@ func gain_exp(amount: int) -> int:
 	return ups
 
 
+# ---------------- 金币 ----------------
+
+## 入账（掉落、卖店、任务奖励都走这里，保证只有一处广播）。
+func add_gold(amount: int) -> void:
+	if amount == 0:
+		return
+	gold = maxi(0, gold + amount)
+	EventBus.gold_changed.emit(gold)
+
+
 # ---------------- 商店 ----------------
 
 ## 买入一件：金币不足或放不下时不做任何改动。
