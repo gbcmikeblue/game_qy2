@@ -13,12 +13,15 @@ const HUD_SCENE := preload("res://scenes/ui/hud.tscn")
 const WORLD_VIEW := preload("res://scenes/boot/world_view.tscn")
 const TARGET_PICKER := preload("res://scripts/input/target_picker.gd")
 const LOOT_SERVICE := preload("res://scripts/items/loot_service.gd")
+const INVENTORY_PANEL := preload("res://scenes/ui/inventory_panel.tscn")
 
 var map
 var player
 var world_view
 var world: SubViewport
 var loot_service: Node
+## NPC 打开的商店面板（同一时间只允许一个）。
+var _shop_panel: Node = null
 
 ## 换图/读档后的短暂"传送免疫"，避免落点就在传送点上时立刻又被传走。
 const PORTAL_GRACE := 0.8
@@ -62,6 +65,7 @@ func _ready() -> void:
 
 	# 走进传送点由 main 统一换图：地图只负责摆放与发信号。
 	EventBus.portal_entered.connect(_on_portal_entered)
+	EventBus.target_action_requested.connect(_on_target_action)
 
 	# 主菜单选了「读取存档」：等玩家、地图、HUD 都就绪后再恢复，
 	# 否则位置与血量会写到还不存在的节点上。
@@ -109,6 +113,8 @@ func _exit_tree() -> void:
 		DisplayAdapter.layout_changed.disconnect(_apply_layout)
 	if EventBus.portal_entered.is_connected(_on_portal_entered):
 		EventBus.portal_entered.disconnect(_on_portal_entered)
+	if EventBus.target_action_requested.is_connected(_on_target_action):
+		EventBus.target_action_requested.disconnect(_on_target_action)
 
 
 func _process(delta: float) -> void:
@@ -121,6 +127,28 @@ func _on_portal_entered(target_map: String, target_cell: Vector2i) -> void:
 		return
 	if switch_map(target_map, target_cell):
 		_portal_grace = PORTAL_GRACE
+
+
+## 主操作命中 NPC：打开背包面板并直接落在商店页签。
+## 目前 NPC 只卖东西（没有对话系统），所以交互直接进交易。
+func _on_target_action(kind: String, target: Node) -> void:
+	# 只认真正的 NPC 节点：kind 为 "npc" 但实体不是 NpcNode 的情况（测试替身、
+	# 将来可能出现的"伪装 NPC"敌人）不应弹出交易面板。
+	if kind != "npc" or target == null or not is_instance_valid(target) or not (target is NpcNode):
+		return
+	if is_instance_valid(_shop_panel):
+		return
+	_shop_panel = INVENTORY_PANEL.instantiate()
+	if "shop_id" in target:
+		_shop_panel.shop_id = target.shop_id
+	_shop_panel.initial_tab = 2
+	add_child(_shop_panel)
+	if _shop_panel.has_signal("closed"):
+		_shop_panel.closed.connect(_on_shop_panel_closed)
+
+
+func _on_shop_panel_closed() -> void:
+	_shop_panel = null
 
 
 func _build_world_view() -> void:

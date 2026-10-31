@@ -4,6 +4,8 @@
   "button.settings": "SET",
 
   "menu.title": "ISO RPG",
+
+  "npc.merchant.name": "Merchant",
   "menu.new_game": "NEW GAME",
   "menu.load_title": "LOAD GAME",
   "menu.quit": "QUIT",

@@ -16,6 +16,8 @@ extends CharacterBody2D
 var hurt_invuln := 0.3
 var respawn_delay := 2.0
 var respawn_invuln := 1.0
+## NPC 交互半径（与 NpcNode.INTERACT_RADIUS 保持一致）。
+const INTERACT_RADIUS := 56.0
 ## 摇杆幅值超过该值即视为玩家主动操作，会打断自动接近。
 const STICK_CANCEL_THRESHOLD := 0.2
 ## 非战斗交互（交互/采摘/观察）的飘字颜色。
@@ -277,7 +279,25 @@ func get_selected_action_key() -> String:
 	var kind := "monster"
 	if _has_valid_lock() and _locked.has_method("get_target_kind"):
 		kind = _locked.get_target_kind()
+	elif nearest_npc() != null:
+		# 没锁定但站在 NPC 旁边：主操作按钮显示「交互」，与实际行为一致。
+		kind = "npc"
 	return DataRegistry.get_interaction_action(kind)
+
+
+## 交互半径内最近的 NPC；没有则返回 null。
+func nearest_npc() -> Node2D:
+	var best: Node2D = null
+	var best_distance := INTERACT_RADIUS
+	for node: Node in get_tree().get_nodes_in_group("npcs"):
+		if not (node is Node2D):
+			continue
+		var npc := node as Node2D
+		var distance := global_position.distance_to(npc.global_position)
+		if distance <= best_distance:
+			best_distance = distance
+			best = npc
+	return best
 
 
 ## 供 HUD 展示选中状态。
@@ -310,6 +330,13 @@ func perform_action() -> int:
 
 	if not _has_valid_lock():
 		_set_locked_target(null)
+		# 没有战斗目标时：靠近 NPC 按主操作即交互（NPC 不进锁定系统）。
+		var npc := nearest_npc()
+		if npc != null:
+			cancel_auto_approach()
+			EventBus.target_action_requested.emit(npc.get_target_kind(), npc)
+			CombatFx.show_text(npc.global_position, Locale.t("action.interact"), INTERACT_COLOR)
+			return 1
 		return 0
 
 	var target := _locked

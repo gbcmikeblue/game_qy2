@@ -4,6 +4,8 @@
   "button.settings": "设置",
 
   "menu.title": "等距 RPG",
+
+  "npc.merchant.name": "商人",
   "menu.new_game": "新游戏",
   "menu.load_title": "读取存档",
   "menu.quit": "退出",

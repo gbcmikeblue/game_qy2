@@ -57,6 +57,7 @@ func _ready() -> void:
 	await _test_main_menu()
 	await _test_multi_map()
 	await _test_portals()
+	await _test_npc()
 	SaveService.autosave_enabled = true
 	InventoryService.reset()
 	_report()
@@ -769,6 +770,62 @@ func _test_portals() -> void:
 	_check(String(game.map.map_id) == target_id, "换图后没有被立刻弹回")
 
 	SaveService.map_switcher = Callable()
+	GameManager.player = null
+	remove_child(game)
+	game.queue_free()
+	await get_tree().process_frame
+	InventoryService.reset()
+
+
+# ---------------- NPC：靠近交互 / 主操作文案 / 打开商店页 ----------------
+
+func _test_npc() -> void:
+	InventoryService.reset()
+	var game = GAME_SCENE.instantiate()
+	add_child(game)
+	await get_tree().process_frame
+
+	var npcs: Array[Node] = []
+	for node: Node in game.map.get_entity_root().get_children():
+		if node is NpcNode:
+			npcs.append(node)
+	_check(npcs.size() == 1, "test_map_01 有 1 个 NPC（实际 %d）" % npcs.size())
+	if npcs.is_empty():
+		remove_child(game)
+		game.queue_free()
+		return
+
+	var npc := npcs[0] as NpcNode
+	var hero = GameManager.player
+
+	# 远处：不可交互，主操作仍是攻击
+	hero.global_position = npc.global_position + Vector2(400.0, 0.0)
+	await get_tree().physics_frame
+	_check(hero.nearest_npc() == null, "离得远时找不到可交互 NPC")
+	_check(String(hero.get_selected_action_key()) == "action.attack",
+			"远景时主操作仍是攻击（%s）" % hero.get_selected_action_key())
+
+	# 靠近：主操作变成交互，按一次发出 npc 交互请求
+	var kinds: Array = []
+	var on_action := func(kind: String, _target: Node) -> void: kinds.append(kind)
+	EventBus.target_action_requested.connect(on_action)
+	hero.global_position = npc.global_position + Vector2(20.0, 0.0)
+	_check(hero.nearest_npc() == npc, "靠近后能定位到该 NPC")
+	_check(String(hero.get_selected_action_key()) == "action.interact",
+			"靠近后主操作变成交互（%s）" % hero.get_selected_action_key())
+	hero.perform_action()
+	_check(kinds.size() == 1 and String(kinds[0]) == "npc", "按主操作发出 npc 交互请求")
+
+	# main 收到请求后打开面板，并直接落在商店页
+	await get_tree().process_frame
+	var panel = game._shop_panel
+	_check(panel != null and is_instance_valid(panel), "交互后打开了商店面板")
+	if panel != null and is_instance_valid(panel):
+		_check(panel.current_tab() == 2, "面板直接落在商店页签（%d）" % panel.current_tab())
+		_check(panel.shop_buy_row_count() > 0, "商店有货架（%d 件）" % panel.shop_buy_row_count())
+		panel.close_panel()
+
+	EventBus.target_action_requested.disconnect(on_action)
 	GameManager.player = null
 	remove_child(game)
 	game.queue_free()

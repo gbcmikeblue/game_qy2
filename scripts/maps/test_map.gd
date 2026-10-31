@@ -18,6 +18,7 @@ var _entities: Node2D
 var _prop_defs: Array = []
 var _enemy_defs: Array = []
 var _portal_defs: Array = []
+var _npc_defs: Array = []
 var _blocked: Dictionary = {}
 var _pathfinder: GridPathfinder
 
@@ -29,6 +30,7 @@ func _ready() -> void:
 	_build_walls()
 	_build_props()
 	_build_portals()
+	_build_npcs()
 	_build_enemies()
 
 
@@ -134,6 +136,15 @@ func _build_portals() -> void:
 		_entities.add_child(portal)
 
 
+## NPC：数据里一个 {u, v, shop, name_key} 就是一个可交互角色。
+func _build_npcs() -> void:
+	for entry: Dictionary in _npc_defs:
+		var npc := NpcNode.new()
+		npc.setup(StringName(String(entry.get("shop", "basic"))), String(entry.get("name_key", "")))
+		npc.position = Iso.grid_to_world(Vector2i(int(entry.get("u", 0)), int(entry.get("v", 0))))
+		_entities.add_child(npc)
+
+
 func _build_enemies() -> void:
 	for entry: Dictionary in _enemy_defs:
 		var type_id := String(entry.get("type", ""))
@@ -178,3 +189,4 @@ func _load_map_data() -> void:
 	_prop_defs = _map_data.get("props", [])
 	_enemy_defs = _map_data.get("enemies", [])
 	_portal_defs = _map_data.get("portals", [])
+	_npc_defs = _map_data.get("npcs", [])

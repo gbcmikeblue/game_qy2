@@ -4,6 +4,9 @@
   "grid_size": [32, 32],
   "road_u": [15, 16],
   "player_spawn": [16, 16],
+  "npcs": [
+    { "u": 6, "v": 12, "shop": "basic", "name_key": "npc.merchant.name" }
+  ],
   "portals": [
     { "u": 16, "v": 3, "target": "test_map_02", "tu": 10, "tv": 14 }
   ],

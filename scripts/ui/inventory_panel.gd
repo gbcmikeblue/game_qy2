@@ -60,6 +60,11 @@ var _save_page: Control
 var _save_info: Array[Label] = []
 var _save_load_buttons: Array[UiButton] = []
 
+## 打开时直接落在哪个页签（NPC 交易 → 2 = 商店）。
+var initial_tab := 0
+## 指定商店 id；留空则用 ItemRegistry.default_shop()。
+var shop_id: StringName = &""
+
 var _tab := 0
 var _hint_left := 0.0
 ## 背包行与物品 id 的对应关系（验收脚本按 id 找行，不依赖顺序）。
@@ -76,6 +81,8 @@ func _ready() -> void:
 	_locale_and_signals()
 	_pause_game()
 	_refresh_all()
+	if initial_tab != 0:
+		_switch_tab(initial_tab)
 
 
 func _exit_tree() -> void:
@@ -480,7 +487,7 @@ func _rebuild_shop() -> void:
 
 	var min_height := CONTENT_RECT.size.y - 30.0
 	var buy_index := 0
-	var shop := ItemRegistry.default_shop()
+	var shop := _active_shop()
 	if shop != null:
 		for def: ItemData in shop.stock:
 			if def == null:
@@ -506,6 +513,15 @@ func _rebuild_shop() -> void:
 		sell_index += 1
 	_sell_rows.custom_minimum_size = Vector2(320.0, maxf(min_height, float(sell_index) * SHOP_ROW_HEIGHT))
 	_sell_rows.size = _sell_rows.custom_minimum_size
+
+
+## 当前要展示的商店：优先用 NPC 指定的 id，其次回落到默认商店。
+func _active_shop() -> ShopData:
+	if shop_id != &"":
+		var shop := ItemRegistry.get_shop(shop_id)
+		if shop != null:
+			return shop
+	return ItemRegistry.default_shop()
 
 
 func _shop_row(parent: Control, index: int, text: String) -> UiButton:
