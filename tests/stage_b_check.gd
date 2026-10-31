@@ -1,4 +1,4 @@
-﻿extends Node
+extends Node
 
 ## 阶段 B 验收：战斗闭环 + 点选目标（选中与攻击完全分离）+ 自动接近。
 ## 运行：godot --headless --path <项目> res://tests/stage_b_check.tscn

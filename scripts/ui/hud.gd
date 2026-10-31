@@ -1,4 +1,4 @@
-﻿extends CanvasLayer
+extends CanvasLayer
 
 ## HUD：血条 + 选中目标状态 + 调试信息 + 设置入口。
 ## 语言切换入口已迁到设置面板（本层不再有 LANG 按钮）。
