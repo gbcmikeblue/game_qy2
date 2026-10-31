@@ -117,6 +117,10 @@
   "inventory.full": "Inventory full",
 
   "button.inventory": "BAG",
+  "button.skill": "SKILL",
+  "hud.hp_mp": "HP %d/%d   MP %d/%d",
+  "skill.no_mp": "Not enough MP",
+  "skill.cooling": "Cooling down",
   "inv.title": "INVENTORY",
   "inv.tab.bag": "BAG",
   "inv.tab.equip": "EQUIP",

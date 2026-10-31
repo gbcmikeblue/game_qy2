@@ -15,6 +15,8 @@ const MIN_TOUCH_DP := 44.0
 
 @export var radius := 56.0
 @export var caption := "ATK"
+## 按钮动作：attack = 主操作；skill = 技能（只在抬起时广播一次 skill_requested）。
+@export var action := "attack"
 
 var _held := false
 var _disabled := false
@@ -84,7 +86,9 @@ func _press() -> void:
 	_held = true
 	queue_redraw()
 	# 按下即通知，用于“长按达到秒数触发持续攻击”；动作本身仍只在抬起时触发。
-	EventBus.attack_pressed.emit()
+	# 技能按钮没有「长按连发」语义，按下时什么也不发。
+	if action == "attack":
+		EventBus.attack_pressed.emit()
 
 
 func _release() -> void:
@@ -93,7 +97,10 @@ func _release() -> void:
 	_held = false
 	_touch_index = -1
 	queue_redraw()
-	EventBus.attack_requested.emit()
+	if action == "skill":
+		EventBus.skill_requested.emit("heavy_strike")
+	else:
+		EventBus.attack_requested.emit()
 
 
 func _draw() -> void:

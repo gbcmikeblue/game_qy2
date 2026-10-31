@@ -117,6 +117,10 @@
   "inventory.full": "背包已满",
 
   "button.inventory": "背包",
+  "button.skill": "技能",
+  "hud.hp_mp": "生命 %d/%d   魔法 %d/%d",
+  "skill.no_mp": "魔法不足",
+  "skill.cooling": "冷却中",
   "inv.title": "背包",
   "inv.tab.bag": "背包",
   "inv.tab.equip": "装备",

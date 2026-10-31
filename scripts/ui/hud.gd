@@ -20,6 +20,7 @@ const INVENTORY_PANEL := preload("res://scenes/ui/inventory_panel.tscn")
 @onready var _hp_fill: ColorRect = $HpFill
 @onready var _hp_label: Label = $HpLabel
 @onready var _attack_button = $AttackButton
+@onready var _skill_button = $SkillButton
 @onready var _settings_button: UiButton = $SettingsButton
 @onready var _inventory_button: UiButton = $InventoryButton
 @onready var _hint_label: Label = $HintLabel
@@ -149,6 +150,8 @@ func _axis_shift(start_anchor: float, end_anchor: float,
 ## 切后台的暂停由 GameManager 负责，HUD 只消费状态。
 func _update_interaction_gate() -> void:
 	_attack_button.set_disabled(GameManager.is_paused)
+	if _skill_button != null:
+		_skill_button.set_disabled(GameManager.is_paused)
 
 
 func _process(_delta: float) -> void:
@@ -166,6 +169,7 @@ func _on_texts_changed(_arg: Variant = null) -> void:
 func _refresh_texts() -> void:
 	_settings_button.set_caption(Locale.t("button.settings"))
 	_inventory_button.set_caption(Locale.t("button.inventory"))
+	_skill_button.set_caption(Locale.t("button.skill"))
 	_update_action_button()
 	_update_hint()
 
@@ -229,7 +233,11 @@ func _update_health() -> void:
 	# 宽度按 HpBack 的实时宽度取比例（锚点化后血条宽度随安全区/视口变化）。
 	var full_width := maxf(0.0, _hp_back.size.x - HP_FILL_INSET * 2.0)
 	_hp_fill.size = Vector2(full_width * ratio, _hp_fill.size.y)
-	_hp_label.text = Locale.t("hud.hp", [current, maximum])
+	if player.has_method("get_mp"):
+		_hp_label.text = Locale.t("hud.hp_mp", [current, maximum,
+				int(player.get_mp()), int(player.get_max_mp())])
+	else:
+		_hp_label.text = Locale.t("hud.hp", [current, maximum])
 
 
 ## 选中行：只展示当前选中目标（选中由点击完成，与攻击无关）。

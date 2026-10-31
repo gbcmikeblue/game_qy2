@@ -51,6 +51,7 @@ func _ready() -> void:
 
 	_test_combat_math()
 	_test_combat_service()
+	_test_skill()
 	_test_health_component()
 	_test_pathfinding()
 	await _test_fsm()
@@ -166,6 +167,61 @@ func _test_combat_service() -> void:
 	attacker.queue_free()
 	target.queue_free()
 	blocked.queue_free()
+
+
+## 技能（重击）：扣蓝 + 冷却 + 失败不扣蓝不进冷却 + 伤害倍率。
+func _test_skill() -> void:
+	_clear_enemies()
+	await get_tree().physics_frame
+	await _ensure_player_alive()
+	_player.global_position = _map.spawn_world_position()
+	_player.velocity = Vector2.ZERO
+	_player.crit_rate = 0.0
+	InputManager.touch_vector = Vector2.ZERO
+	await get_tree().physics_frame
+
+	var target = _spawn_static_enemy(Vector2(0.0, 40.0))
+	await get_tree().physics_frame
+	_check(_player.select_target(target), "技能测试前提：选中目标")
+
+	# 1) 正常施放
+	_player.mp = _player.max_mp
+	_player._skill_cd_left = 0.0
+	var hp_before: int = target.get_hp()
+	var mp_before: int = _player.get_mp()
+	_check(_player.try_skill() == 1, "技能命中返回 1")
+	var dealt: int = hp_before - target.get_hp()
+	var expected := maxi(1, int(round(_player.attack * _player.skill_multiplier - target.get_defense())))
+	_check(dealt == expected, "技能伤害 = 攻击×倍率 - 防御（%d，期望 %d）" % [dealt, expected])
+	_check(_player.get_mp() == mp_before - _player.skill_mp_cost,
+			"扣除魔法（%d → %d）" % [mp_before, _player.get_mp()])
+	_check(_player.get_skill_cooldown_left() > 0.0,
+			"进入冷却（剩余 %.1fs）" % _player.get_skill_cooldown_left())
+
+	# 2) 冷却中再按：无效，且不扣蓝不造成伤害
+	var mp_after: int = _player.get_mp()
+	var hp_after: int = target.get_hp()
+	_check(_player.try_skill() == 0, "冷却中施放返回 0")
+	_check(target.get_hp() == hp_after and _player.get_mp() == mp_after,
+			"冷却中既不造成伤害也不扣蓝")
+
+	# 3) 魔法不足：无效，且不进入冷却
+	_player._skill_cd_left = 0.0
+	_player.mp = _player.skill_mp_cost - 1
+	_check(_player.try_skill() == 0, "魔法不足时返回 0")
+	_check(_player.get_skill_cooldown_left() == 0.0, "施放失败不进入冷却")
+
+	# 4) 目标被清场后技能无效（不调用 clear_targets：那个入口会重置持续攻击状态，
+	#    后续的「持续攻击」用例依赖它保持干净）。
+	_player.mp = _player.max_mp
+	_player._skill_cd_left = 0.0
+	_clear_enemies()
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	_check(_player.try_skill() == 0, "没有目标时技能无效")
+
+	_player.mp = _player.max_mp
+	_player._skill_cd_left = 0.0
 
 
 func _test_health_component() -> void:
@@ -917,6 +973,9 @@ func _test_auto_attack() -> void:
 		await get_tree().physics_frame
 	await get_tree().physics_frame
 	_check(_player.is_auto_attack_active(), "持续攻击重新开启")
+	# 技能键现在会真的施放（此前是空实现）。本步骤只验「技能键中断持续攻击」，
+	# 所以先清空魔法，避免把下一步要用的目标打残或打死。
+	_player.mp = 0
 	EventBus.skill_requested.emit("test_skill")
 	await get_tree().physics_frame
 	_check(not _player.is_auto_attack_active(), "技能键中断持续攻击")

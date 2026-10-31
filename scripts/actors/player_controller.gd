@@ -4,13 +4,13 @@ extends CharacterBody2D
 ##
 ## 选中与攻击完全分离（本文件是这两条链路的唯一边界）：
 ## 1. 选中：外部（点击/点触的世界拾取器）调用 select_target()/clear_selection()，
-##    这里只维护“当前选中目标”与它的高亮，不产生任何伤害、不触发任何攻击。
+##    这里只维护"当前选中目标"与它的高亮，不产生任何伤害、不触发任何攻击。
 ## 2. 攻击：只由 attack_requested（ATK 按钮 / 攻击键）触发，作用于当前选中目标；
 ##    没有选中目标时攻击不会自动选目标，只空挥。
-## 3. 自动接近：只有“按攻击键且选中目标在攻击距离外”才开启；摇杆、技能、暂停、
+## 3. 自动接近：只有"按攻击键且选中目标在攻击距离外"才开启；摇杆、技能、暂停、
 ##    目标失效都会立刻关闭，且不会自行恢复。
 ##
-## 候选范围：目标脚底落在“视口矩形向内收缩 lock_screen_margin”的区域（每帧实时计算）。
+## 候选范围：目标脚底落在"视口矩形向内收缩 lock_screen_margin"的区域（每帧实时计算）。
 
 ## 受击/复活时序：数值在 data/actors/player.json，测试可注入更短的值来加速验收。
 var hurt_invuln := 0.3
@@ -39,6 +39,14 @@ var spawn_point := Vector2.ZERO
 var max_hp := 120
 ## 魔法上限：阶段 C 只做属性预留，技能系统落地后才消耗（决策 N05）。
 var max_mp := 30
+## 当前魔法值与技能参数（数值在 player.json）。技能是 Q12 的 B 阶段首个主动技能。
+var mp := 30
+var mp_regen := 2.0
+var skill_mp_cost := 10
+var skill_cooldown := 3.0
+var skill_multiplier := 2.2
+var _skill_cd_left := 0.0
+var _mp_frac := 0.0
 var attack := 20.0
 var defense := 5.0
 var crit_rate := 0.1
@@ -52,7 +60,7 @@ var lock_release_margin := 0.0
 var auto_approach := true
 var approach_stop_ratio := 0.85
 
-## 持续攻击：长按秒数 / 连点次数（可在“设置 → 玩家战斗”里改，运行时实时生效）。
+## 持续攻击：长按秒数 / 连点次数（可在"设置 → 玩家战斗"里改，运行时实时生效）。
 var auto_attack_hold_seconds := 0.8
 var auto_attack_tap_count := 5
 ## 连点计数的滚动窗口（设计值，不进设置面板）。
@@ -70,7 +78,7 @@ var _invuln_left := 0.0
 var _respawn_left := 0.0
 var _dead := false
 
-## 当前选中的目标（等价于旧版本的“锁定目标”）。
+## 当前选中的目标（等价于旧版本的"锁定目标"）。
 var _locked: EnemyController = null
 
 var _path: Array[Vector2i] = []
@@ -207,7 +215,58 @@ func clear_targets() -> void:
 
 
 func get_mp() -> int:
-	return 0
+	return mp
+
+
+func get_skill_cooldown_left() -> float:
+	return _skill_cd_left
+
+
+## 主动技能：重击。消耗 MP、有冷却，伤害为普攻的 skill_multiplier 倍。
+## 冷却与 MP 的判定放在真正结算之前，失败不扣蓝也不进冷却。
+func try_skill() -> int:
+	if _dead or not _has_valid_lock():
+		return 0
+	var target := _locked
+	if not is_instance_valid(target) or not target.is_alive():
+		return 0
+	if _skill_cd_left > 0.0:
+		CombatFx.show_text(global_position + Vector2(0.0, -44.0), Locale.t("skill.cooling"),
+				Color(0.75, 0.75, 0.85))
+		return 0
+	if mp < skill_mp_cost:
+		CombatFx.show_text(global_position + Vector2(0.0, -44.0), Locale.t("skill.no_mp"),
+				Color(0.55, 0.65, 0.95))
+		return 0
+	if global_position.distance_to(target.global_position) > attack_range * 1.25:
+		return 0
+
+	var result := CombatService.strike(self, target, {
+		"attack": attack * skill_multiplier,
+		"crit_rate": crit_rate,
+		"crit_damage": crit_damage,
+		"rng": _rng,
+		"max_range": attack_range * 1.25,
+		"show_damage_fx": true,
+	})
+	if not bool(result["hit"]):
+		return 0
+	mp -= skill_mp_cost
+	_skill_cd_left = skill_cooldown
+	return 1
+
+
+## 魔法回复：死亡时不回；累计小数部分，够 1 点才进位（避免每帧截断导致永远回不满）。
+func _tick_mp(delta: float) -> void:
+	_skill_cd_left = maxf(0.0, _skill_cd_left - delta)
+	if _dead or mp >= max_mp:
+		return
+	_mp_frac += mp_regen * delta
+	if _mp_frac < 1.0:
+		return
+	var gain := int(_mp_frac)
+	_mp_frac -= float(gain)
+	mp = mini(max_mp, mp + gain)
 
 
 func get_max_mp() -> int:
@@ -251,7 +310,7 @@ func get_locked_target() -> EnemyController:
 
 ## 点击/点触选中：只改选中状态与高亮，绝不触发攻击。
 ## 目标必须存活且脚底在当前可见安全矩形内，否则返回 false。
-## from_aggro=true 表示由“被攻击接管”驱动，此时不清除仇恨锁。
+## from_aggro=true 表示由"被攻击接管"驱动，此时不清除仇恨锁。
 func select_target(enemy: EnemyController, from_aggro := false) -> bool:
 	if _dead or not is_instance_valid(enemy) or not enemy.is_alive():
 		return false
@@ -290,7 +349,7 @@ func has_lock_targets() -> bool:
 	return not lock_targets().is_empty()
 
 
-## 主操作按钮的文案 key：由“选中目标的类型”决定（怪物=攻击 / NPC=交互 / 植物=采摘 / 玩家=观察）。
+## 主操作按钮的文案 key：由"选中目标的类型"决定（怪物=攻击 / NPC=交互 / 植物=采摘 / 玩家=观察）。
 ## 没有选中目标时回退到攻击，新增类型只需要改 data/targets/interactions.json。
 func get_selected_action_key() -> String:
 	var kind := "monster"
@@ -336,7 +395,7 @@ func face_direction(direction: Vector2) -> void:
 		_visual.set_facing(_facing)
 
 
-## 主操作（ATK 按钮 / 攻击键）：统一入口，按“选中目标的类型”分发。
+## 主操作（ATK 按钮 / 攻击键）：统一入口，按"选中目标的类型"分发。
 ## - 目标超距：先自动接近（不消耗冷却，也不产生动作）
 ## - 归类为 action.attack（怪物，或未知类型回退）：走战斗结算
 ## - 其它类型（NPC/植物/玩家）：只广播 target_action_requested 并飘字，绝不造成伤害
@@ -358,7 +417,7 @@ func perform_action() -> int:
 
 	var target := _locked
 	if global_position.distance_to(target.global_position) > attack_range:
-		# 目标在攻击距离外：这次按键表示“走过去”，开启自动接近、不消耗冷却。
+		# 目标在攻击距离外：这次按键表示"走过去"，开启自动接近、不消耗冷却。
 		_approach_enabled = true
 		_reset_approach_state()
 		return 0
@@ -398,7 +457,7 @@ func _resolve_attack(target: EnemyController) -> int:
 
 
 func take_damage(amount: int, source: Node = null) -> void:
-	# 先记录“谁在攻击我”，再判断能不能真正扣血：
+	# 先记录"谁在攻击我"，再判断能不能真正扣血：
 	# 复活无敌帧、受击保护期内攻击虽然不生效，但目标接管必须照常进行，
 	# 否则复活后立刻挨打时会没有选中目标。
 	_latch_attacker(source)
@@ -417,6 +476,7 @@ func _physics_process(delta: float) -> void:
 	_clock += delta
 	_cooldown_left = maxf(0.0, _cooldown_left - delta)
 	_invuln_left = maxf(0.0, _invuln_left - delta)
+	_tick_mp(delta)
 
 	if _dead:
 		_respawn_left -= delta
@@ -451,7 +511,7 @@ func _physics_process(delta: float) -> void:
 	velocity = velocity.move_toward(target_speed, rate * delta)
 	move_and_slide()
 
-	# 移动输入已在上面取消持续攻击，这里只处理“触发/维持”。
+	# 移动输入已在上面取消持续攻击，这里只处理"触发/维持"。
 	_tick_auto_attack(delta)
 
 
@@ -463,7 +523,7 @@ func is_auto_attack_active() -> bool:
 
 
 ## 触发阈值说明：按住主操作 ≥ auto_attack_hold_seconds，或在 auto_attack_tap_window 内
-## 连点 ≥ auto_attack_tap_count 次。两个阈值都可在“设置 → 玩家战斗”里调整。
+## 连点 ≥ auto_attack_tap_count 次。两个阈值都可在"设置 → 玩家战斗"里调整。
 func _tick_auto_attack(delta: float) -> void:
 	var holding := Input.is_action_pressed("attack") or _ui_attack_held
 	if holding:
@@ -580,7 +640,7 @@ func is_auto_approaching() -> bool:
 	return _should_auto_approach()
 
 
-## 自动接近是否处于“已开启”状态（即使当前已在攻击距离内、暂时不需要移动）。
+## 自动接近是否处于"已开启"状态（即使当前已在攻击距离内、暂时不需要移动）。
 func is_approach_enabled() -> bool:
 	return _approach_enabled
 
@@ -707,6 +767,7 @@ func _sync_stats_from_inventory() -> void:
 	crit_damage = float(s.get("crit_damage", crit_damage))
 	max_hp = int(s.get("max_hp", max_hp))
 	max_mp = int(s.get("max_mp", max_mp))
+	mp = clampi(mp, 0, max_mp)
 	if _health != null:
 		_health.set_max_hp(max_hp)
 
@@ -732,6 +793,10 @@ func _apply_def() -> void:
 	hurt_invuln = float(def.get("hurt_invuln", hurt_invuln))
 	respawn_delay = float(def.get("respawn_delay", respawn_delay))
 	respawn_invuln = float(def.get("respawn_invuln", respawn_invuln))
+	mp_regen = float(def.get("mp_regen", mp_regen))
+	skill_mp_cost = int(def.get("skill_mp_cost", skill_mp_cost))
+	skill_cooldown = float(def.get("skill_cooldown", skill_cooldown))
+	skill_multiplier = float(def.get("skill_multiplier", skill_multiplier))
 	auto_approach = bool(def.get("auto_approach", auto_approach))
 	approach_stop_ratio = float(def.get("approach_stop_ratio", approach_stop_ratio))
 	# 持续攻击与仇恨锁的设计默认值（用户可在设置里覆盖前两项）。
@@ -741,7 +806,7 @@ func _apply_def() -> void:
 	aggro_latch_timeout = float(def.get("aggro_latch_timeout", aggro_latch_timeout))
 
 
-## 用户在“设置 → 玩家战斗”里改的阈值实时生效。
+## 用户在"设置 → 玩家战斗"里改的阈值实时生效。
 func _apply_combat_settings() -> void:
 	auto_attack_hold_seconds = GameSettings.combat_value("auto_attack_hold_seconds", auto_attack_hold_seconds)
 	auto_attack_tap_count = int(GameSettings.combat_value("auto_attack_tap_count", float(auto_attack_tap_count)))
@@ -759,9 +824,10 @@ func _on_attack_pressed() -> void:
 
 
 func _on_skill_requested(_skill_id: String) -> void:
-	# 技能按钮（后续接入）同样打断自动接近与持续攻击。
+	# 技能按钮同样打断自动接近与持续攻击，然后尝试施放。
 	cancel_auto_approach()
 	cancel_auto_attack()
+	try_skill()
 
 
 func _on_game_paused(is_paused: bool) -> void:
