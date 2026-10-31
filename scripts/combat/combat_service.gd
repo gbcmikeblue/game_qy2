@@ -57,6 +57,7 @@ static func strike(attacker: Node2D, target: Node, params: Dictionary = {}) -> D
 	if bool(params.get("show_damage_fx", false)):
 		CombatFx.show_damage(target.global_position, damage, bool(result["is_crit"]))
 
+	EventBus.damage_dealt.emit(target.global_position, damage, bool(result["is_crit"]))
 	out["hit"] = true
 	out["damage"] = damage
 	out["is_crit"] = bool(result["is_crit"])

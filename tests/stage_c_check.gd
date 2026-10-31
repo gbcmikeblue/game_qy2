@@ -60,6 +60,7 @@ func _ready() -> void:
 	await _test_npc()
 	await _test_quests()
 	await _test_quest_panel()
+	_test_audio()
 	SaveService.autosave_enabled = true
 	InventoryService.reset()
 	_report()
@@ -925,6 +926,23 @@ func _test_quest_panel() -> void:
 	QuestService.reset()
 	InventoryService.reset()
 	Locale.set_language(original_lang)
+
+
+# ---------------- 音效：程序化合成（无素材） ----------------
+
+func _test_audio() -> void:
+	_check(AudioService.has_stream("hit") and AudioService.has_stream("level"),
+			"命中与升级音效已合成")
+	var length := AudioService.stream_length("hit")
+	_check(length > 0.02 and length < 1.0, "命中音效时长合理（%.2fs）" % length)
+	_check(AudioService.play("hit"), "播放命中音效返回 true")
+
+	var saved := AudioService.enabled
+	AudioService.enabled = false
+	_check(not AudioService.play("hit"), "关闭音效后不再播放")
+	AudioService.enabled = saved
+
+	_check(not AudioService.play("no_such_sound"), "未知音效名安全返回 false")
 
 
 func _make_entry(item_id: StringName, chance: float, low: int, high: int) -> LootEntry:
