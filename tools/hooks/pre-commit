@@ -1,0 +1,36 @@
+#!/bin/sh
+# Run the fast test group (~5s) before every commit; abort on failure.
+#
+# Why only the fast group: stage_a/stage_b depend on real physics frames and take
+# ~66s together, which pushes people to use --no-verify. The fast group covers
+# data / services / layout / touch contracts and catches most cheap regressions.
+#
+# Skip once with: git commit --no-verify
+# Install with:   powershell -NoProfile -ExecutionPolicy Bypass -File tools/install_hooks.ps1
+# Keep this file ASCII-only: Windows consoles and sh handle it more predictably.
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+
+# Git Bash reports /c/... paths; PowerShell needs C:\... form.
+root_win=$(cd "$root" && pwd -W 2>/dev/null) || root_win=$root
+
+if ! command -v powershell >/dev/null 2>&1; then
+    echo "[pre-commit] powershell not found; skipping fast test group" >&2
+    exit 0
+fi
+
+if [ ! -f "$root_win/tools/run_tests.ps1" ]; then
+    echo "[pre-commit] tools/run_tests.ps1 not found; skipping" >&2
+    exit 0
+fi
+
+echo "[pre-commit] running fast test group (git commit --no-verify to skip)..." >&2
+powershell -NoProfile -ExecutionPolicy Bypass -File "$root_win/tools/run_tests.ps1" -Group fast -Quiet
+code=$?
+
+if [ $code -ne 0 ]; then
+    echo "" >&2
+    echo "[pre-commit] fast test group failed; commit aborted." >&2
+    echo "[pre-commit] fix and retry, or use: git commit --no-verify" >&2
+fi
+exit $code
