@@ -12,9 +12,10 @@ extends CharacterBody2D
 ##
 ## 候选范围：目标脚底落在“视口矩形向内收缩 lock_screen_margin”的区域（每帧实时计算）。
 
-const HURT_INVULN := 0.3
-const RESPAWN_DELAY := 2.0
-const RESPAWN_INVULN := 1.0
+## 受击/复活时序：数值在 data/actors/player.json，测试可注入更短的值来加速验收。
+var hurt_invuln := 0.3
+var respawn_delay := 2.0
+var respawn_invuln := 1.0
 ## 摇杆幅值超过该值即视为玩家主动操作，会打断自动接近。
 const STICK_CANCEL_THRESHOLD := 0.2
 ## 非战斗交互（交互/采摘/观察）的飘字颜色。
@@ -353,7 +354,7 @@ func take_damage(amount: int, source: Node = null) -> void:
 	var applied := _health.take_damage(amount)
 	if applied <= 0:
 		return
-	_invuln_left = HURT_INVULN
+	_invuln_left = hurt_invuln
 	if _visual != null and _visual.has_method("flash"):
 		_visual.flash()
 	CombatFx.show_hurt(global_position, applied)
@@ -675,6 +676,9 @@ func _apply_def() -> void:
 	turn_rate = float(def.get("turn_rate", turn_rate))
 	lock_screen_margin = float(def.get("lock_screen_margin", lock_screen_margin))
 	lock_release_margin = float(def.get("lock_release_margin", lock_release_margin))
+	hurt_invuln = float(def.get("hurt_invuln", hurt_invuln))
+	respawn_delay = float(def.get("respawn_delay", respawn_delay))
+	respawn_invuln = float(def.get("respawn_invuln", respawn_invuln))
 	auto_approach = bool(def.get("auto_approach", auto_approach))
 	approach_stop_ratio = float(def.get("approach_stop_ratio", approach_stop_ratio))
 	# 持续攻击与仇恨锁的设计默认值（用户可在设置里覆盖前两项）。
@@ -722,7 +726,7 @@ func _on_hp_changed(current: int, maximum: int) -> void:
 ## 死亡：立即停手、清空选中与仇恨锁、取消碰撞，2 秒后自动复活。
 func _on_died() -> void:
 	_dead = true
-	_respawn_left = RESPAWN_DELAY
+	_respawn_left = respawn_delay
 	velocity = Vector2.ZERO
 	_ui_attack_held = false
 	cancel_auto_attack()
@@ -736,9 +740,9 @@ func _on_died() -> void:
 	EventBus.player_died.emit()
 
 
-## 复活（触发条件：`HealthComponent.died` 后经过 RESPAWN_DELAY 秒）。
+## 复活（触发条件：`HealthComponent.died` 后经过 respawn_delay 秒）。
 ## 状态重置清单（顺序重要：先恢复存活标记，再清理战斗状态）：
-## 1. 位置回到出生点、满血、无敌 RESPAWN_INVULN 秒；
+## 1. 位置回到出生点、满血、无敌 respawn_invuln 秒；
 ## 2. 清空选中目标与仇恨锁——复活后的第一次被攻击可以重新接管目标；
 ## 3. 取消持续攻击 / 自动接近，并清掉按钮按住状态与攻击冷却；
 ## 4. 恢复碰撞层，恢复视觉。
@@ -747,7 +751,7 @@ func _respawn() -> void:
 	velocity = Vector2.ZERO
 	_health.reset_full()
 	_dead = false
-	_invuln_left = RESPAWN_INVULN
+	_invuln_left = respawn_invuln
 	_cooldown_left = 0.0
 	_ui_attack_held = false
 	_hold_time = 0.0

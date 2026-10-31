@@ -39,6 +39,9 @@ func _ready() -> void:
 
 	_map = _main.map
 	_player = GameManager.player
+	# 复活等待默认 2 秒（data/actors/player.json），验收只关心「复活与否」不关心时长，
+	# 这里注入 0.15 秒，两处复活用例合计省约 4 秒。
+	_player.respawn_delay = 0.15
 	EventBus.enemy_died.connect(_on_enemy_died)
 
 	# 刷怪布局必须在清场之前验证。
@@ -298,6 +301,9 @@ func _test_hysteresis_and_return() -> void:
 			break
 	_check(wolf.get_state_name() == "RETURN", "目标超出 deaggro 后进入 RETURN")
 
+	# 走回出生点本身要十几秒：这里把归位速度调快，语义不变（仍然要走完这段路），
+	# 只是把真实等待压到 1/4。断言不看速度，只看「是否回到非 RETURN 状态」。
+	wolf.move_speed *= 6.0
 	for i in 900:
 		await get_tree().physics_frame
 		if wolf.get_state_name() != "RETURN":

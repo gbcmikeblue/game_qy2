@@ -48,14 +48,19 @@ func _test_wall_containment() -> void:
 		Vector2.RIGHT, Vector2.LEFT, Vector2.UP, Vector2.DOWN,
 		Vector2(1.0, 1.0).normalized(), Vector2(-1.0, -1.0).normalized(),
 	]
+	# 走同样远的距离但用 3 倍速度：撞墙时间从 4 秒压到 1.5 秒，断言（仍在围墙内）不变。
+	# 速度只影响「多久走到墙」，不影响「会不会穿墙」这一判定。
+	var original_speed: float = player.max_speed
+	player.max_speed = original_speed * 3.0
 	for direction in directions:
 		InputManager.touch_vector = direction
-		for i in 240:
+		for i in 90:
 			await get_tree().physics_frame
 		var frac := _fractional_grid(player.global_position)
 		var inside := frac.x > 0.25 and frac.y > 0.25 and frac.x < max_frac and frac.y < max_frac
-		_check(inside, "朝 %s 冲撞 4 秒后仍在围墙内：grid(%.2f, %.2f)" % [str(direction.round()), frac.x, frac.y])
+		_check(inside, "朝 %s 冲撞 1.5 秒后仍在围墙内：grid(%.2f, %.2f)" % [str(direction.round()), frac.x, frac.y])
 	InputManager.touch_vector = Vector2.ZERO
+	player.max_speed = original_speed
 
 	# 玩家不应该卡在墙里：恢复输入后应能继续移动。
 	var before := player.global_position
