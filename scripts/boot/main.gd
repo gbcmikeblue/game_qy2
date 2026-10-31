@@ -52,6 +52,12 @@ func _ready() -> void:
 	DisplayAdapter.layout_changed.connect(_apply_layout)
 	_apply_layout()
 
+	# 主菜单选了「读取存档」：等玩家、地图、HUD 都就绪后再恢复，
+	# 否则位置与血量会写到还不存在的节点上。
+	var pending := SaveService.consume_pending_slot()
+	if pending > 0 and not SaveService.load_slot(pending):
+		push_warning("读档失败（槽 %d），按新游戏继续" % pending)
+
 
 func _exit_tree() -> void:
 	if DisplayAdapter.layout_changed.is_connected(_apply_layout):

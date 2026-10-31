@@ -9,6 +9,7 @@ const ITEMS_DIR := "res://data/items/items"
 const LOOT_DIR := "res://data/items/loot"
 const LOOT_SERVICE := preload("res://scripts/items/loot_service.gd")
 const PLAYER_SCENE := preload("res://scenes/actors/player/player.tscn")
+const MAIN_MENU := preload("res://scenes/ui/main_menu.tscn")
 const INVENTORY_PANEL := preload("res://scenes/ui/inventory_panel.tscn")
 
 var _failures: Array[String] = []
@@ -52,6 +53,7 @@ func _ready() -> void:
 	await _test_shop()
 	await _test_save()
 	await _test_save_panel()
+	await _test_main_menu()
 	SaveService.autosave_enabled = true
 	InventoryService.reset()
 	_report()
@@ -628,6 +630,49 @@ func _test_save_panel() -> void:
 	GameManager.player = null
 	remove_child(hero)
 	hero.queue_free()
+	InventoryService.reset()
+
+
+# ---------------- 主菜单：空槽置灰 / 读档请求 / 新游戏清状态 ----------------
+
+func _test_main_menu() -> void:
+	for slot in range(1, SaveService.SLOT_COUNT + 1):
+		SaveService.delete_slot(slot)
+	InventoryService.reset()
+
+	var menu = MAIN_MENU.instantiate()
+	add_child(menu)
+	await get_tree().process_frame
+	var launches: Array = []
+	# 替换真实场景切换：真切换会销毁测试节点。
+	menu.game_launcher = func() -> void: launches.append(true)
+
+	_check(menu.slot_text(0) == Locale.t("inv.slot.empty"), "主菜单空槽显示「未存档」")
+	_check(menu.load_disabled(0), "主菜单空槽的读取按钮置灰")
+	_check(not menu.request_load(1), "空槽不能发起读档")
+	_check(launches.is_empty(), "空槽不会请求进入游戏")
+
+	InventoryService.gold = 77
+	InventoryService.add_item(&"mat_wolf_fang", 2)
+	SaveService.save_slot(2)
+	menu.refresh()
+	_check(not menu.load_disabled(1), "有档的槽位按钮可用")
+	_check(menu.slot_text(1).contains("77"), "槽位摘要显示金币（%s）" % menu.slot_text(1))
+
+	_check(menu.request_load(2), "有档时可以发起读档")
+	_check(SaveService.pending_slot == 2, "读档请求写入 pending_slot（%d）" % SaveService.pending_slot)
+	_check(launches.size() == 1, "读档会请求进入游戏")
+	_check(SaveService.consume_pending_slot() == 2, "pending_slot 可被游戏场景取出")
+
+	InventoryService.gold = 5
+	menu.request_new_game()
+	_check(InventoryService.gold == 0, "新游戏清空运行时金币")
+	_check(SaveService.pending_slot == 0, "新游戏不留下待读档")
+	_check(launches.size() == 2, "新游戏同样请求进入游戏")
+
+	SaveService.delete_slot(2)
+	menu.queue_free()
+	await get_tree().process_frame
 	InventoryService.reset()
 
 

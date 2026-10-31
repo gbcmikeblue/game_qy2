@@ -3,6 +3,11 @@
   "lang.zh": "中文",
   "button.settings": "SET",
 
+  "menu.title": "ISO RPG",
+  "menu.new_game": "NEW GAME",
+  "menu.load_title": "LOAD GAME",
+  "menu.quit": "QUIT",
+
   "hud.hp": "HP %d/%d",
   "hud.fps": "FPS %d",
   "hud.state": "STATE %s",

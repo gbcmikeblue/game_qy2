@@ -18,6 +18,10 @@ const AUTOSAVE_SLOT := 1
 ## 自动存档开关：验收脚本会临时关掉，避免测试过程写用户的存档文件。
 var autosave_enabled := true
 
+## 主菜单选了「读取存档」时先把槽位号放在这里，等游戏场景把玩家建好后再消费。
+## 直接在主菜单里 load 是不行的：那时 GameManager.player 还不存在。
+var pending_slot := 0
+
 
 func _ready() -> void:
 	# 自动存档时机（决策 D-01 的可落地部分）：升级与退出。
@@ -38,6 +42,13 @@ func _notification(what: int) -> void:
 func _on_level_changed(_level: int, _exp: int) -> void:
 	if autosave_enabled:
 		save_slot(AUTOSAVE_SLOT)
+
+
+## 取出并清空「待读档槽位」；返回 0 表示没有待处理的读档请求。
+func consume_pending_slot() -> int:
+	var slot := pending_slot
+	pending_slot = 0
+	return slot
 
 
 ## 槽位路径（1..SLOT_COUNT）。

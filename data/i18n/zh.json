@@ -3,6 +3,11 @@
   "lang.zh": "中文",
   "button.settings": "设置",
 
+  "menu.title": "等距 RPG",
+  "menu.new_game": "新游戏",
+  "menu.load_title": "读取存档",
+  "menu.quit": "退出",
+
   "hud.hp": "生命 %d/%d",
   "hud.fps": "帧率 %d",
   "hud.state": "状态 %s",
