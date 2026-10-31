@@ -6,6 +6,7 @@
   "menu.title": "ISO RPG",
 
   "quest.progress": "Quest: %s %d/%d",
+  "quest.progress.ready": "Quest ready: %s %d/%d (turn in)",
   "quest.completed": "Quest complete: %s",
   "quest.unknown.title": "Unknown quest",
   "quest.line.current": "Active: %s %d/%d",
@@ -18,6 +19,16 @@
   "quest.none": "All quests completed",
 
   "inv.tab.quest": "QUEST",
+
+  "dialogue.default": "...",
+  "dialogue.trade": "TRADE",
+  "dialogue.accept": "TAKE QUEST",
+  "dialogue.turn_in": "TURN IN",
+  "dialogue.leave": "LEAVE",
+  "dialogue.accepted": "Accepted: %s",
+  "dialogue.turned_in": "Turned in: %s",
+  "dialogue.no_quest": "No quest available",
+  "npc.merchant.dialogue": "Take a look, all good stuff. Clear a few beasts for me and I will pay.",
   "quest.wolf_hunt.title": "Wolf Hunt",
   "quest.boar_hunt.title": "Boar Trouble",
   "quest.bat_hunt.title": "Cave Cleanup",

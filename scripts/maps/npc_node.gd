@@ -17,12 +17,18 @@ var kind := "npc"
 ## 交互时打开的商店 id（对应 data/items/shop/*.tres）。
 var shop_id: StringName = &"basic"
 var display_name_key := "npc.merchant.name"
+## 对话台词 key（对话框正文）；空则用通用台词。
+var dialogue_key := ""
+## 是否发布任务（对话框据此显示「接取 / 交付」）。
+var quest_giver := false
 
 
-func setup(p_shop_id: StringName, p_name_key: String) -> void:
+func setup(p_shop_id: StringName, p_name_key: String, p_dialogue_key := "", p_quest_giver := false) -> void:
 	shop_id = p_shop_id
 	if not p_name_key.is_empty():
 		display_name_key = p_name_key
+	dialogue_key = p_dialogue_key
+	quest_giver = p_quest_giver
 	queue_redraw()
 
 

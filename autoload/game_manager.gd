@@ -10,6 +10,8 @@ extends Node
 
 ## 暂停原因。
 const PAUSE_SETTINGS := "settings"
+## NPC 对话框：与设置/背包各自独立，谁先关谁释放自己那条。
+const PAUSE_DIALOGUE := "dialogue"
 const PAUSE_BACKGROUND := "background"
 const PAUSE_MANUAL := "manual"
 

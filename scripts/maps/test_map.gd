@@ -140,7 +140,8 @@ func _build_portals() -> void:
 func _build_npcs() -> void:
 	for entry: Dictionary in _npc_defs:
 		var npc := NpcNode.new()
-		npc.setup(StringName(String(entry.get("shop", "basic"))), String(entry.get("name_key", "")))
+		npc.setup(StringName(String(entry.get("shop", "basic"))), String(entry.get("name_key", "")),
+				String(entry.get("dialogue", "")), bool(entry.get("quest_giver", false)))
 		npc.position = Iso.grid_to_world(Vector2i(int(entry.get("u", 0)), int(entry.get("v", 0))))
 		_entities.add_child(npc)
 

@@ -831,14 +831,34 @@ func _test_npc() -> void:
 	hero.perform_action()
 	_check(kinds.size() == 1 and String(kinds[0]) == "npc", "按主操作发出 npc 交互请求")
 
-	# main 收到请求后打开面板，并直接落在商店页
+	# main 收到请求后先开对话，再由「交易 / 接取」决定后续
 	await get_tree().process_frame
-	var panel = game._shop_panel
-	_check(panel != null and is_instance_valid(panel), "交互后打开了商店面板")
-	if panel != null and is_instance_valid(panel):
-		_check(panel.current_tab() == 2, "面板直接落在商店页签（%d）" % panel.current_tab())
-		_check(panel.shop_buy_row_count() > 0, "商店有货架（%d 件）" % panel.shop_buy_row_count())
-		panel.close_panel()
+	var dialogue = game._dialogue_panel
+	_check(dialogue != null and is_instance_valid(dialogue), "交互后打开了对话面板")
+	if dialogue != null and is_instance_valid(dialogue):
+		_check(not dialogue.body_text().is_empty(), "对话面板有台词（%s）" % dialogue.body_text())
+		_check(dialogue.action_at(0) == "trade", "第一个动作是交易（%s）" % dialogue.action_at(0))
+		_check(dialogue.action_at(dialogue.action_count() - 1) == "leave",
+				"最后一个动作是离开（%s）" % dialogue.action_at(dialogue.action_count() - 1))
+		_check(dialogue.action_at(1) == "accept", "商人兼发任务，第二个动作是接取（%s）" % dialogue.action_at(1))
+
+		# 接取任务后再交付按钮才会出现
+		_check(dialogue.press_action("accept"), "点接取任务")
+		_check(QuestService.active_id == "quest_wolf_hunt",
+				"接取后当前任务为猎狼（%s）" % QuestService.active_id)
+
+		# 点交易 → 关对话 + 开商店面板（落在商店页）
+		_check(dialogue.press_action("trade"), "点交易")
+		await get_tree().process_frame
+		var shop_panel = game._shop_panel
+		_check(shop_panel != null and is_instance_valid(shop_panel), "交易后打开了商店面板")
+		if shop_panel != null and is_instance_valid(shop_panel):
+			_check(shop_panel.current_tab() == 2, "商店面板落在商店页签（%d）" % shop_panel.current_tab())
+			_check(shop_panel.shop_buy_row_count() > 0,
+					"商店有货架（%d 件）" % shop_panel.shop_buy_row_count())
+			shop_panel.close_panel()
+
+	QuestService.reset()
 
 	EventBus.target_action_requested.disconnect(on_action)
 	GameManager.player = null
@@ -856,37 +876,55 @@ func _test_quests() -> void:
 
 	_check(DataRegistry.get_quests().size() == 3, "任务数据载入 3 条（%d）" % DataRegistry.get_quests().size())
 	_check(not DataRegistry.get_quest("quest_wolf_hunt").is_empty(), "能按 id 取到任务定义")
-	_check(QuestService.active_id == "quest_wolf_hunt",
-			"默认接取第一条任务（%s）" % QuestService.active_id)
+	_check(QuestService.active_id.is_empty(), "新游戏不会自动接任务（需要找 NPC 接）")
+	_check(QuestService.available_quests().size() == 3,
+			"开局有 3 条可接任务（%d）" % QuestService.available_quests().size())
 
 	var gold_before := InventoryService.gold
+
+	# 没接任务时击杀不计进度
+	EventBus.enemy_defeated.emit("forest_wolf", Vector2.ZERO)
+	_check(QuestService.progress.get("quest_wolf_hunt", 0) == 0, "未接取时击杀不计数")
+
+	_check(QuestService.accept("quest_wolf_hunt"), "接取猎狼任务")
+	_check(QuestService.active_id == "quest_wolf_hunt",
+			"接取后成为当前任务（%s）" % QuestService.active_id)
+	_check(QuestService.accept("quest_boar_hunt") == false, "已有进行中任务时不能再接")
 
 	# 非目标怪不计进度
 	EventBus.enemy_defeated.emit("stone_boar", Vector2.ZERO)
 	_check(QuestService.current_progress() == 0, "非目标怪不推进任务进度")
 
-	# 打满 3 只目标怪 → 完成并接取下一条
+	# 打满 3 只目标怪 → 可交付（不自动发奖）
 	for i in 3:
 		EventBus.enemy_defeated.emit("forest_wolf", Vector2.ZERO)
-	_check(QuestService.completed.has("quest_wolf_hunt"), "达到数量后任务标记完成")
+	_check(QuestService.is_ready_to_turn_in("quest_wolf_hunt"), "达到数量后可交付")
+	_check(not QuestService.completed.has("quest_wolf_hunt"), "达标但未交付时不算完成")
+	_check(InventoryService.gold == gold_before, "达标不自动发奖（要回去交付）")
+
+	# 交付 → 发奖 + 标记完成
+	_check(QuestService.turn_in("quest_wolf_hunt"), "交付任务成功")
+	_check(QuestService.completed.has("quest_wolf_hunt"), "交付后标记完成")
 	_check(InventoryService.gold == gold_before + 50,
-			"发放金币奖励 50（实际 %d）" % InventoryService.gold)
-	_check(QuestService.active_id == "quest_boar_hunt",
-			"自动接取下一条任务（%s）" % QuestService.active_id)
+			"交付时发放金币 50（实际 %d）" % InventoryService.gold)
+	_check(QuestService.active_id.is_empty(), "交付后没有进行中的任务")
+	_check(QuestService.turn_in("quest_wolf_hunt") == false, "重复交付被拒绝")
+	_check(InventoryService.gold == gold_before + 50, "重复交付不重复发奖")
+	_check(QuestService.available_quests().size() == 2,
+			"完成的从可接列表移除（剩 %d）" % QuestService.available_quests().size())
 
-	# 已完成的任务不再重复结算
-	EventBus.enemy_defeated.emit("forest_wolf", Vector2.ZERO)
-	_check(InventoryService.gold == gold_before + 50, "已完成任务不重复发奖")
-
-	# 存档往返
+	# 存档往返：接取状态 + 进度
+	_check(QuestService.accept("quest_boar_hunt"), "接取第二条任务")
+	EventBus.enemy_defeated.emit("stone_boar", Vector2.ZERO)
 	var text_before := QuestService.progress_text()
 	_check(SaveService.save_slot(2), "带任务进度存档成功")
 	QuestService.reset()
-	_check(QuestService.active_id == "quest_wolf_hunt", "reset 后回到第一条任务")
+	_check(QuestService.active_id.is_empty(), "reset 后没有进行中的任务")
 	_check(SaveService.load_slot(2), "读档成功")
 	_check(QuestService.active_id == "quest_boar_hunt",
 			"读档恢复当前任务（%s）" % QuestService.active_id)
 	_check(QuestService.progress_text() == text_before, "读档恢复任务进度文案")
+	_check(QuestService.completed.has("quest_wolf_hunt"), "读档保留已完成任务")
 
 	SaveService.delete_slot(2)
 	QuestService.reset()
@@ -907,17 +945,25 @@ func _test_quest_panel() -> void:
 
 	panel.switch_tab_to(4)
 	_check(panel.current_tab() == 4, "可以切到任务页签")
+	_check(panel.quest_line(0) == Locale.t("quest.none"),
+			"没接任务时任务页显示提示（%s）" % panel.quest_line(0))
+
+	# 接取后再看：显示当前任务与奖励
+	QuestService.accept("quest_wolf_hunt")
+	panel.refresh()
 	_check(panel.quest_line_count() >= 3, "任务页至少 3 行（%d）" % panel.quest_line_count())
 	_check(panel.quest_line(0).contains("猎狼"),
 			"首行显示当前任务标题（%s）" % panel.quest_line(0))
 	_check(panel.quest_line(1).contains("50"),
 			"第二行显示金币奖励（%s）" % panel.quest_line(1))
 
-	# 打满第一条任务 → 当前任务切到下一条，已完成清单出现「猎狼」
+	# 打满并交付 → 当前任务清空，已完成清单出现「猎狼」
 	for i in 3:
 		EventBus.enemy_defeated.emit("forest_wolf", Vector2.ZERO)
-	_check(panel.quest_line(0).contains("野猪"),
-			"完成后当前任务切到下一条（%s）" % panel.quest_line(0))
+	QuestService.turn_in("quest_wolf_hunt")
+	panel.refresh()
+	_check(panel.quest_line(0) == Locale.t("quest.none"),
+			"交付后当前任务行回到提示（%s）" % panel.quest_line(0))
 
 	var joined := ""
 	for i in panel.quest_line_count():
