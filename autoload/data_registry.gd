@@ -5,10 +5,13 @@ extends Node
 
 const ENEMY_DEF_PATH := "res://data/actors/enemies.json"
 const PLAYER_DEF_PATH := "res://data/actors/player.json"
+const CLASSES_PATH := "res://data/actors/classes.json"
 const INTERACTION_PATH := "res://data/targets/interactions.json"
 
 var enemies: Dictionary = {}
 var player_def: Dictionary = {}
+## 职业定义：id -> {id, display_name_key, slots[]}（槽位是装备系统的唯一来源）。
+var classes: Dictionary = {}
 ## 目标类型 -> 主操作按钮文案（i18n key）；新增交互对象只改 JSON。
 var interactions: Dictionary = {}
 var interaction_fallback := "monster"
@@ -17,6 +20,7 @@ var interaction_fallback := "monster"
 func _ready() -> void:
 	_load_enemy_defs()
 	_load_player_def()
+	_load_class_defs()
 	_load_interactions()
 
 
@@ -26,6 +30,26 @@ func get_enemy_def(id: String) -> Dictionary:
 
 func get_player_def() -> Dictionary:
 	return player_def
+
+
+func get_class_def(class_id: String) -> Dictionary:
+	return classes.get(class_id, {})
+
+
+## 该职业允许的装备槽位（顺序即 UI 顺序）。职业缺失时返回空数组，物品校验会因此报错。
+func get_class_slots(class_id: String) -> Array[String]:
+	var out: Array[String] = []
+	var def := get_class_def(class_id)
+	for slot: Variant in def.get("slots", []):
+		out.append(String(slot))
+	return out
+
+
+## 默认职业：classes.json 里第一个（本期只有 warrior）。
+func default_class_id() -> String:
+	for key: Variant in classes:
+		return String(key)
+	return ""
 
 
 ## 目标类型对应的按钮文案 i18n key（未知类型回退到 fallback）。
@@ -64,6 +88,25 @@ func _load_player_def() -> void:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return
 	player_def = (parsed as Dictionary).get("player", {})
+
+
+func _load_class_defs() -> void:
+	var parsed: Variant = _read_json(CLASSES_PATH)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return
+	for entry: Variant in (parsed as Dictionary).get("classes", []):
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var item := entry as Dictionary
+		var id := String(item.get("id", ""))
+		if id.is_empty():
+			push_error("职业配置缺少 id：%s" % str(item))
+			continue
+		var slots: Array = item.get("slots", [])
+		if slots.is_empty():
+			push_error("职业 %s 没有配置 slots" % id)
+			continue
+		classes[id] = item
 
 
 func _load_interactions() -> void:

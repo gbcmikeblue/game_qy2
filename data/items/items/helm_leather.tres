@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="ItemData" format=3]
+
+[ext_resource type="Script" path="res://scripts/items/item_data.gd" id="1_mii7c"]
+
+[resource]
+script = ExtResource("1_mii7c")
+id = &"helm_leather"
+name_key = "item.helm_leather.name"
+desc_key = "item.helm_leather.desc"
+category = 1
+slot = &"helmet"
+defense_bonus = 1.0
+value = 18

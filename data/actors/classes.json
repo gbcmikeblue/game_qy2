@@ -1,0 +1,9 @@
+{
+  "classes": [
+    {
+      "id": "warrior",
+      "display_name_key": "class.warrior.name",
+      "slots": ["weapon", "shield", "armor", "helmet", "boots"]
+    }
+  ]
+}

@@ -23,6 +23,7 @@ EventBus="*res://autoload/event_bus.gd"
 GameManager="*res://autoload/game_manager.gd"
 InputManager="*res://autoload/input_manager.gd"
 DataRegistry="*res://autoload/data_registry.gd"
+ItemRegistry="*res://scripts/items/item_registry.gd"
 
 [display]
 

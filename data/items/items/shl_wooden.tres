@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="ItemData" format=3]
+
+[ext_resource type="Script" path="res://scripts/items/item_data.gd" id="1_05ysk"]
+
+[resource]
+script = ExtResource("1_05ysk")
+id = &"shl_wooden"
+name_key = "item.shl_wooden.name"
+desc_key = "item.shl_wooden.desc"
+category = 1
+slot = &"shield"
+defense_bonus = 2.0
+value = 25

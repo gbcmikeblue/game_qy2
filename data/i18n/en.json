@@ -86,5 +86,30 @@
   "display.unavailable": "This monitor cannot fit that tier",
   "display.locked": "Window size is fixed by the selected tier.",
   "display.mobile": "Mobile runs fullscreen; window size is set by the system.",
-  "display.free_resize": "Debug build: window resizes freely; tiers are just reference sizes."
+  "display.free_resize": "Debug build: window resizes freely; tiers are just reference sizes.",
+
+  "class.warrior.name": "Warrior",
+
+  "item.con_medkit.name": "Medkit",
+  "item.con_medkit.desc": "Restores a little HP.",
+  "item.con_mana_draught.name": "Mana Draught",
+  "item.con_mana_draught.desc": "Restores a little MP.",
+  "item.con_ration.name": "Ration",
+  "item.con_ration.desc": "Restores a tiny amount of HP.",
+  "item.mat_wolf_fang.name": "Wolf Fang",
+  "item.mat_wolf_fang.desc": "Common material. Can be sold.",
+  "item.mat_boar_hide.name": "Boar Hide",
+  "item.mat_boar_hide.desc": "Common material. Can be sold.",
+  "item.wep_rusty_sword.name": "Rusty Sword",
+  "item.wep_rusty_sword.desc": "ATK +4.",
+  "item.wep_iron_axe.name": "Iron Axe",
+  "item.wep_iron_axe.desc": "ATK +7.",
+  "item.shl_wooden.name": "Wooden Shield",
+  "item.shl_wooden.desc": "DEF +2.",
+  "item.arm_leather.name": "Leather Armor",
+  "item.arm_leather.desc": "DEF +3, HP +10.",
+  "item.helm_leather.name": "Leather Helm",
+  "item.helm_leather.desc": "DEF +1.",
+  "item.boots_traveler.name": "Traveler Boots",
+  "item.boots_traveler.desc": "DEF +1."
 }

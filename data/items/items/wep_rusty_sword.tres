@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="ItemData" format=3]
+
+[ext_resource type="Script" path="res://scripts/items/item_data.gd" id="1_w8a6w"]
+
+[resource]
+script = ExtResource("1_w8a6w")
+id = &"wep_rusty_sword"
+name_key = "item.wep_rusty_sword.name"
+desc_key = "item.wep_rusty_sword.desc"
+category = 1
+slot = &"weapon"
+attack_bonus = 4.0
+value = 30

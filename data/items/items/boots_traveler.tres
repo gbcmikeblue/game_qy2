@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="ItemData" format=3]
+
+[ext_resource type="Script" path="res://scripts/items/item_data.gd" id="1_32g3a"]
+
+[resource]
+script = ExtResource("1_32g3a")
+id = &"boots_traveler"
+name_key = "item.boots_traveler.name"
+desc_key = "item.boots_traveler.desc"
+category = 1
+slot = &"boots"
+defense_bonus = 1.0
+value = 15

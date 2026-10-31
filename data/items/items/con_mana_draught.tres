@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="ItemData" format=3]
+
+[ext_resource type="Script" path="res://scripts/items/item_data.gd" id="1_k31da"]
+
+[resource]
+script = ExtResource("1_k31da")
+id = &"con_mana_draught"
+name_key = "item.con_mana_draught.name"
+desc_key = "item.con_mana_draught.desc"
+category = 0
+stackable = true
+max_stack = 99
+value = 25
+use_effect = &"restore_mp"

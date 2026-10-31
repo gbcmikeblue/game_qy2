@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="ItemData" format=3]
+
+[ext_resource type="Script" path="res://scripts/items/item_data.gd" id="1_mjhhk"]
+
+[resource]
+script = ExtResource("1_mjhhk")
+id = &"wep_iron_axe"
+name_key = "item.wep_iron_axe.name"
+desc_key = "item.wep_iron_axe.desc"
+category = 1
+slot = &"weapon"
+rarity = 1
+attack_bonus = 7.0
+value = 80

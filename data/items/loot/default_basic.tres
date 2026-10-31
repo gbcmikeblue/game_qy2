@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="LootTable" format=3]
+
+[ext_resource type="Script" path="res://scripts/items/loot_entry.gd" id="1_cfxjn"]
+[ext_resource type="Resource" path="res://data/items/items/mat_wolf_fang.tres" id="2_w7ifp"]
+[ext_resource type="Script" path="res://scripts/items/loot_table.gd" id="3_insdp"]
+
+[sub_resource type="Resource" id="Resource_kcy1u"]
+script = ExtResource("1_cfxjn")
+item = ExtResource("2_w7ifp")
+max_qty = 2
+chance = 0.6
+
+[resource]
+script = ExtResource("3_insdp")
+id = &"default_basic"
+entries = Array[ExtResource("1_cfxjn")]([SubResource("Resource_kcy1u")])
+gold_min = 1
+gold_max = 3
