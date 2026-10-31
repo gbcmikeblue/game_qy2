@@ -10,6 +10,7 @@
     },
     {
       "id": "quest_boar_hunt",
+      "requires": "quest_wolf_hunt",
       "title_key": "quest.boar_hunt.title",
       "target": "stone_boar",
       "required": 2,

@@ -70,23 +70,40 @@ skill_id = "whirlwind"
 [node name="SettingsButton" type="Control" parent="."]
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -188.0
+offset_left = -80.0
 offset_top = 16.0
 offset_right = -24.0
-offset_bottom = 54.0
+offset_bottom = 72.0
 mouse_filter = 0
 script = ExtResource("4_menu")
+circular = true
+icon = "settings"
 font_size = 18
 
 [node name="InventoryButton" type="Control" parent="."]
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -360.0
+offset_left = -148.0
 offset_top = 16.0
-offset_right = -196.0
-offset_bottom = 54.0
+offset_right = -92.0
+offset_bottom = 72.0
 mouse_filter = 0
 script = ExtResource("4_menu")
+circular = true
+icon = "bag"
+font_size = 18
+
+[node name="QuestButton" type="Control" parent="."]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -216.0
+offset_top = 16.0
+offset_right = -160.0
+offset_bottom = 72.0
+mouse_filter = 0
+script = ExtResource("4_menu")
+circular = true
+icon = "quest"
 font_size = 18
 
 [node name="HpBack" type="ColorRect" parent="."]
@@ -114,6 +131,32 @@ offset_left = 32.0
 offset_top = -332.0
 offset_right = 312.0
 offset_bottom = -298.0
+
+[node name="MpBack" type="ColorRect" parent="."]
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 32.0
+offset_top = -270.0
+offset_right = 312.0
+offset_bottom = -252.0
+color = Color(0, 0, 0, 0.45)
+
+[node name="MpFill" type="ColorRect" parent="."]
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 34.0
+offset_top = -268.0
+offset_right = 310.0
+offset_bottom = -254.0
+color = Color(0.298, 0.502, 0.882, 1)
+
+[node name="MpLabel" type="Label" parent="."]
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 32.0
+offset_top = -250.0
+offset_right = 312.0
+offset_bottom = -222.0
 
 [node name="DebugLabel" type="Label" parent="."]
 offset_left = 24.0

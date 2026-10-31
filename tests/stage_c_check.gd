@@ -59,6 +59,7 @@ func _ready() -> void:
 	await _test_multi_map()
 	await _test_portals()
 	await _test_npc()
+	await _test_hud_status()
 	await _test_quests()
 	await _test_quest_panel()
 	_test_audio()
@@ -893,15 +894,15 @@ func _test_npc() -> void:
 		_check(dialogue.press_action("quests"), "点任务进入列表")
 		_check(dialogue.action_at(0) == "accept:quest_wolf_hunt",
 				"列表第一条是猎狼（%s）" % dialogue.action_at(0))
-		_check(dialogue.action_at(2) == "accept:quest_bat_hunt",
-				"列表第三条是蝙蝠（%s）" % dialogue.action_at(2))
+		_check(dialogue.action_at(1) == "accept:quest_bat_hunt",
+				"列表第二条是蝙蝠（%s）" % dialogue.action_at(1))
 		_check(dialogue.action_at(dialogue.action_count() - 1) == "back",
 				"列表最后是返回（%s）" % dialogue.action_at(dialogue.action_count() - 1))
 
 		# 选第二条（野猪），验证「选谁就接谁」
 		var idle_text: String = dialogue.body_text()
-		_check(dialogue.press_action("accept:quest_boar_hunt"), "选接野猪任务")
-		_check(QuestService.active_id == "quest_boar_hunt",
+		_check(dialogue.press_action("accept:quest_bat_hunt"), "选接蝙蝠任务")
+		_check(QuestService.active_id == "quest_bat_hunt",
 				"接取的是被点的那条（%s）" % QuestService.active_id)
 		_check(dialogue.body_text() == Locale.t("npc.elder.dialogue.active"),
 				"接取后台词切到「进行中」（%s）" % dialogue.body_text())
@@ -910,18 +911,18 @@ func _test_npc() -> void:
 				"接取后回到主菜单（%s）" % dialogue.action_at(dialogue.action_count() - 1))
 
 		# 达标后列表顶部出现「交付」，点它就结算发奖
-		QuestService.progress["quest_boar_hunt"] = QuestService.current_required()
+		QuestService.progress["quest_bat_hunt"] = QuestService.current_required()
 		# 直接改进度不会发信号，这里手动广播一次，模拟「击杀达标瞬间」。
-		EventBus.quest_updated.emit("quest_boar_hunt", QuestService.current_required(),
+		EventBus.quest_updated.emit("quest_bat_hunt", QuestService.current_required(),
 				QuestService.current_required())
 		_check(dialogue.body_text() == Locale.t("npc.elder.dialogue.turn_in"),
 				"达标后台词切到「可交付」（%s）" % dialogue.body_text())
 		_check(dialogue.press_action("quests"), "再次进入任务列表")
-		_check(dialogue.action_at(0) == "turn_in:quest_boar_hunt",
+		_check(dialogue.action_at(0) == "turn_in:quest_bat_hunt",
 				"达标任务排在最前（%s）" % dialogue.action_at(0))
 		var gold_before: int = InventoryService.gold
-		_check(dialogue.press_action("turn_in:quest_boar_hunt"), "点交付")
-		_check(QuestService.completed.has("quest_boar_hunt"), "交付后标记完成")
+		_check(dialogue.press_action("turn_in:quest_bat_hunt"), "点交付")
+		_check(QuestService.completed.has("quest_bat_hunt"), "交付后标记完成")
 		_check(InventoryService.gold > gold_before,
 				"交付发放奖励（%d → %d）" % [gold_before, InventoryService.gold])
 
@@ -974,8 +975,11 @@ func _test_quests() -> void:
 	_check(DataRegistry.get_quests().size() == 3, "任务数据载入 3 条（%d）" % DataRegistry.get_quests().size())
 	_check(not DataRegistry.get_quest("quest_wolf_hunt").is_empty(), "能按 id 取到任务定义")
 	_check(QuestService.active_id.is_empty(), "新游戏不会自动接任务（需要找 NPC 接）")
-	_check(QuestService.available_quests().size() == 3,
-			"开局有 3 条可接任务（%d）" % QuestService.available_quests().size())
+	_check(QuestService.available_quests().size() == 2,
+			"开局 2 条可接（野猪是关联任务，前置未完成时隐藏）（%d）"
+					% QuestService.available_quests().size())
+	_check(not _quest_ids(QuestService.available_quests()).has("quest_boar_hunt"),
+			"关联任务在前置未完成时不可见")
 
 	var gold_before := InventoryService.gold
 
@@ -983,49 +987,125 @@ func _test_quests() -> void:
 	EventBus.enemy_defeated.emit("forest_wolf", Vector2.ZERO)
 	_check(QuestService.progress.get("quest_wolf_hunt", 0) == 0, "未接取时击杀不计数")
 
+	# 并行接取：猎狼与蝙蝠没有关联关系，可以同时进行
 	_check(QuestService.accept("quest_wolf_hunt"), "接取猎狼任务")
-	_check(QuestService.active_id == "quest_wolf_hunt",
-			"接取后成为当前任务（%s）" % QuestService.active_id)
-	_check(QuestService.accept("quest_boar_hunt") == false, "已有进行中任务时不能再接")
+	_check(QuestService.accept("quest_bat_hunt"), "非关联任务可以继续接取（并行）")
+	_check(QuestService.active_quests().size() == 2,
+			"同时进行 2 条任务（%d）" % QuestService.active_quests().size())
+	_check(QuestService.accept("quest_wolf_hunt") == false, "同一任务不能重复接取")
+	_check(QuestService.accept("quest_boar_hunt") == false, "前置未完成的关联任务无法接取")
 
-	# 非目标怪不计进度
-	EventBus.enemy_defeated.emit("stone_boar", Vector2.ZERO)
-	_check(QuestService.current_progress() == 0, "非目标怪不推进任务进度")
+	# 击杀各自计数、互不干扰
+	EventBus.enemy_defeated.emit("forest_wolf", Vector2.ZERO)
+	EventBus.enemy_defeated.emit("cave_bat", Vector2.ZERO)
+	_check(int(QuestService.progress["quest_wolf_hunt"]) == 1,
+			"猎狼计数 +1（%d）" % QuestService.progress["quest_wolf_hunt"])
+	_check(int(QuestService.progress["quest_bat_hunt"]) == 1,
+			"蝙蝠计数 +1（%d）" % QuestService.progress["quest_bat_hunt"])
 
-	# 打满 3 只目标怪 → 可交付（不自动发奖）
-	for i in 3:
+	# 打满猎狼 → 可交付但不自动发奖
+	for i in 2:
 		EventBus.enemy_defeated.emit("forest_wolf", Vector2.ZERO)
 	_check(QuestService.is_ready_to_turn_in("quest_wolf_hunt"), "达到数量后可交付")
 	_check(not QuestService.completed.has("quest_wolf_hunt"), "达标但未交付时不算完成")
 	_check(InventoryService.gold == gold_before, "达标不自动发奖（要回去交付）")
 
-	# 交付 → 发奖 + 标记完成
+	# 交付 → 发奖；前置完成后，关联任务解锁
 	_check(QuestService.turn_in("quest_wolf_hunt"), "交付任务成功")
-	_check(QuestService.completed.has("quest_wolf_hunt"), "交付后标记完成")
 	_check(InventoryService.gold == gold_before + 50,
 			"交付时发放金币 50（实际 %d）" % InventoryService.gold)
-	_check(QuestService.active_id.is_empty(), "交付后没有进行中的任务")
+	_check(QuestService.active_id == "quest_bat_hunt",
+			"HUD 焦点转到另一条进行中任务（%s）" % QuestService.active_id)
+	_check(_quest_ids(QuestService.available_quests()).has("quest_boar_hunt"),
+			"前置完成后关联任务解锁可见")
 	_check(QuestService.turn_in("quest_wolf_hunt") == false, "重复交付被拒绝")
 	_check(InventoryService.gold == gold_before + 50, "重复交付不重复发奖")
-	_check(QuestService.available_quests().size() == 2,
-			"完成的从可接列表移除（剩 %d）" % QuestService.available_quests().size())
 
-	# 存档往返：接取状态 + 进度
-	_check(QuestService.accept("quest_boar_hunt"), "接取第二条任务")
+	# 存档往返：多条进行中 + 已完成
+	_check(QuestService.accept("quest_boar_hunt"), "接取已解锁的野猪任务")
 	EventBus.enemy_defeated.emit("stone_boar", Vector2.ZERO)
 	var text_before := QuestService.progress_text()
 	_check(SaveService.save_slot(2), "带任务进度存档成功")
 	QuestService.reset()
 	_check(QuestService.active_id.is_empty(), "reset 后没有进行中的任务")
 	_check(SaveService.load_slot(2), "读档成功")
-	_check(QuestService.active_id == "quest_boar_hunt",
-			"读档恢复当前任务（%s）" % QuestService.active_id)
-	_check(QuestService.progress_text() == text_before, "读档恢复任务进度文案")
+	_check(QuestService.active_quests().size() == 2,
+			"读档恢复 2 条进行中任务（%d）" % QuestService.active_quests().size())
 	_check(QuestService.completed.has("quest_wolf_hunt"), "读档保留已完成任务")
+	_check(int(QuestService.progress.get("quest_boar_hunt", 0)) == 1, "读档恢复任务进度")
+	_check(QuestService.progress_text() == text_before, "读档恢复任务进度文案")
 
 	SaveService.delete_slot(2)
 	QuestService.reset()
 	InventoryService.reset()
+
+
+# ---------------- HUD：魔力条 / 圆形图标按钮 / 任务按钮入口 ----------------
+
+func _test_hud_status() -> void:
+	InventoryService.reset()
+	QuestService.reset()
+	var game = GAME_SCENE.instantiate()
+	add_child(game)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var hero = GameManager.player
+	_check(hero != null, "HUD 用例前提：玩家已创建")
+	if hero == null:
+		remove_child(game)
+		game.queue_free()
+		return
+
+	# 1) 生命与魔力是两条独立的 UI（魔力在生命下方）
+	_check(game.hud.hp_text() == Locale.t("hud.hp", [hero.get_hp(), hero.get_max_hp()]),
+			"生命行只显示生命（%s）" % game.hud.hp_text())
+	_check(game.hud.mp_text() == Locale.t("hud.mp", [hero.get_mp(), hero.get_max_mp()]),
+			"魔力行显示魔法（%s）" % game.hud.mp_text())
+	_check(is_equal_approx(game.hud.mp_fill_ratio(), 1.0),
+			"满蓝时魔力条填满（%.2f）" % game.hud.mp_fill_ratio())
+
+	hero.mp = int(hero.get_max_mp() / 2)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check(game.hud.mp_fill_ratio() < 0.75 and game.hud.mp_fill_ratio() > 0.2,
+			"魔力下降后条变短（%.2f）" % game.hud.mp_fill_ratio())
+	_check(game.hud.mp_text().contains(str(hero.get_mp())),
+			"魔力行数值同步（%s）" % game.hud.mp_text())
+
+	# 2) 顶部功能按钮统一为圆形图标
+	for entry: Array in [["SettingsButton", "settings"], ["InventoryButton", "bag"],
+			["QuestButton", "quest"]]:
+		var node_name := String(entry[0])
+		_check(game.hud.button_is_circular(node_name), "%s 是圆形按钮" % node_name)
+		_check(game.hud.button_icon(node_name) == String(entry[1]),
+				"%s 的图标是 %s（实际 %s）" % [node_name, entry[1], game.hud.button_icon(node_name)])
+
+	# 3) 任务按钮是独立入口，直接落在任务页签
+	game.hud.press_quest_button()
+	await get_tree().process_frame
+	_check(game.hud.open_panel_tab() == 4,
+			"任务按钮打开面板并落在任务页（%d）" % game.hud.open_panel_tab())
+	var panel = game.hud._panel
+	if is_instance_valid(panel):
+		panel.close_panel()
+	await get_tree().process_frame
+
+	hero.mp = hero.get_max_mp()
+	remove_child(game)
+	game.queue_free()
+	await get_tree().process_frame
+	InventoryService.reset()
+	QuestService.reset()
+
+
+## 任务列表中是否含某 id（断言用的小工具）。
+func _quest_ids(list: Array) -> Array:
+	var out: Array = []
+	for entry: Variant in list:
+		if typeof(entry) == TYPE_DICTIONARY:
+			out.append(String((entry as Dictionary).get("id", "")))
+	return out
 
 
 # ---------------- 任务面板：当前任务 / 奖励 / 完成清单 ----------------

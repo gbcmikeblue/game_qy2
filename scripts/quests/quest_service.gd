@@ -1,15 +1,16 @@
 extends Node
 
-## 任务服务（Autoload）：接取 → 计数 → 交付发奖。
+## 任务服务（Autoload）：可并行接取 + 前置任务隐藏 + 交付发奖。
 ##
 ## 设计取舍：
-##   · 任务必须由 NPC 接取（`accept`），不再自动串行——否则「找谁接任务」这件事不存在；
-##   · 一次只有一条进行中的任务（active_id），但已完成/已接取状态按 id 全量记录；
-##   · 达标后只是「可交付」，奖励在 `turn_in` 时才发（玩家要回去找 NPC）；
-##   · 奖励只发一次（completed 兜底，重复 turn_in 无效）；
-##   · 状态随存档走（SaveService 的 payload 里带 quests 字段）。
+##   · **可并行**：接一条任务不会挡住其它任务；只要没有 requires 关系就能同时进行。
+##   · **关联任务**：`requires` 指向的前置任务未完成时，该任务不出现在可接列表（隐藏）。
+##   · 一次只有一条"当前任务"用于 HUD 单行显示（active_id = 最近接取的那条），
+##     但进度按 id 分别记录，互不影响。
+##   · 达标只是「可交付」，奖励在 turn_in 时才发（玩家要回去找 NPC）。
+##   · 状态随存档走（accepted / progress / completed / active）。
 
-## 进行中的任务 id；空表示当前没有接任务。
+## HUD 焦点的任务 id（最近接取的那条）；空表示没有进行中的任务。
 var active_id := ""
 ## 任务 id -> 已接取（含已完成）
 var accepted: Dictionary = {}
@@ -52,14 +53,37 @@ func current_required() -> int:
 	return int(current_quest().get("required", 0))
 
 
+## 前置任务是否已完成（没有 requires 视为满足）。
+func is_unlocked(quest_id: String) -> bool:
+	var quest := DataRegistry.get_quest(quest_id)
+	if quest.is_empty():
+		return false
+	var requires := String(quest.get("requires", ""))
+	return requires.is_empty() or completed.has(requires)
+
+
+## 所有进行中（已接取、未交付）的任务，按数据顺序。
+func active_quests() -> Array:
+	var out: Array = []
+	for entry: Variant in DataRegistry.get_quests():
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var quest := entry as Dictionary
+		var quest_id := String(quest.get("id", ""))
+		if quest_id.is_empty() or not accepted.has(quest_id) or completed.has(quest_id):
+			continue
+		out.append(quest)
+	return out
+
+
 func is_ready_to_turn_in(quest_id: String) -> bool:
 	var quest := DataRegistry.get_quest(quest_id)
-	if quest.is_empty() or completed.has(quest_id):
+	if quest.is_empty() or completed.has(quest_id) or not accepted.has(quest_id):
 		return false
 	return int(progress.get(quest_id, 0)) >= int(quest.get("required", 0))
 
 
-## 可接取的任务（未接取、未完成）。NPC 对话框据此决定是否显示「接取任务」。
+## 可接取的任务：未接取、未完成、前置已完成（关联任务未解锁时不出现）。
 func available_quests() -> Array:
 	var out: Array = []
 	for entry: Variant in DataRegistry.get_quests():
@@ -68,6 +92,8 @@ func available_quests() -> Array:
 		var quest := entry as Dictionary
 		var quest_id := String(quest.get("id", ""))
 		if quest_id.is_empty() or accepted.has(quest_id) or completed.has(quest_id):
+			continue
+		if not is_unlocked(quest_id):
 			continue
 		out.append(quest)
 	return out
@@ -86,7 +112,7 @@ func turn_in_quests() -> Array:
 	return out
 
 
-## HUD 用的一行文案；没有任务时返回空串。
+## HUD 用的一行文案：显示当前任务，若还有别的进行中任务则追加数量。
 func progress_text() -> String:
 	var quest := current_quest()
 	if quest.is_empty():
@@ -94,9 +120,15 @@ func progress_text() -> String:
 	var title := Locale.t(String(quest.get("title_key", "quest.unknown.title")))
 	var current := current_progress()
 	var required := current_required()
+	var line := ""
 	if current >= required:
-		return Locale.t("quest.progress.ready", [title, current, required])
-	return Locale.t("quest.progress", [title, current, required])
+		line = Locale.t("quest.progress.ready", [title, current, required])
+	else:
+		line = Locale.t("quest.progress", [title, current, required])
+	var extra := active_quests().size() - 1
+	if extra > 0:
+		line += " " + Locale.t("quest.progress.more", [extra])
+	return line
 
 
 # ---------------- 接取 / 交付 ----------------
@@ -105,8 +137,8 @@ func accept(quest_id: String) -> bool:
 	var quest := DataRegistry.get_quest(quest_id)
 	if quest.is_empty() or accepted.has(quest_id) or completed.has(quest_id):
 		return false
-	if not active_id.is_empty() and not completed.has(active_id):
-		# 一次只做一条：已有进行中的任务时拒绝，避免进度与提示混乱。
+	# 关联任务必须等前置完成（未解锁时连列表都看不到，这里再挡一次）。
+	if not is_unlocked(quest_id):
 		return false
 	accepted[quest_id] = true
 	active_id = quest_id
@@ -136,25 +168,37 @@ func turn_in(quest_id: String) -> bool:
 		InventoryService.add_item(item_id, qty)
 
 	if active_id == quest_id:
-		active_id = ""
+		active_id = _pick_active()
 	EventBus.quest_completed.emit(quest_id)
 	return true
 
 
+## 交付后把 HUD 焦点挪到另一条进行中的任务（没有则清空）。
+func _pick_active() -> String:
+	for entry: Variant in active_quests():
+		if typeof(entry) == TYPE_DICTIONARY:
+			return String((entry as Dictionary).get("id", ""))
+	return ""
+
+
 # ---------------- 进度 ----------------
 
+## 一次击杀可以同时推进多条任务（并行接取时各自计数）。
 func _on_enemy_defeated(enemy_id: String, _world_position: Vector2) -> void:
-	if active_id.is_empty() or completed.has(active_id):
-		return
-	var quest := current_quest()
-	if quest.is_empty() or String(quest.get("target", "")) != enemy_id:
-		return
-	if current_progress() >= current_required():
-		return   # 已达标：等交付，不再累加
-
-	var count := current_progress() + 1
-	progress[active_id] = count
-	EventBus.quest_updated.emit(active_id, count, current_required())
+	for entry: Variant in active_quests():
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var quest := entry as Dictionary
+		if String(quest.get("target", "")) != enemy_id:
+			continue
+		var quest_id := String(quest["id"])
+		var required := int(quest.get("required", 0))
+		var current := int(progress.get(quest_id, 0))
+		if current >= required:
+			continue   # 已达标：等交付，不再累加
+		var next := current + 1
+		progress[quest_id] = next
+		EventBus.quest_updated.emit(quest_id, next, required)
 
 
 # ---------------- 存档 ----------------
@@ -174,9 +218,9 @@ func restore(data: Dictionary) -> void:
 	completed.clear()
 	active_id = ""
 
-	for key: Variant in _true_keys(data.get("accepted", {})):
+	for key: Variant in _keys_of(data.get("accepted", {})):
 		accepted[key] = true
-	for key: Variant in _true_keys(data.get("completed", {})):
+	for key: Variant in _keys_of(data.get("completed", {})):
 		completed[key] = true
 	var raw_progress: Variant = data.get("progress", {})
 	if typeof(raw_progress) == TYPE_DICTIONARY:
@@ -195,10 +239,12 @@ func restore(data: Dictionary) -> void:
 		if not progress.has(active_id):
 			progress[active_id] = 0
 		EventBus.quest_updated.emit(active_id, current_progress(), current_required())
+	else:
+		active_id = _pick_active()
 
 
 ## 兼容旧的布尔字典（值可能是 true 或字符串），统一取 key。
-func _true_keys(raw: Variant) -> Array:
+func _keys_of(raw: Variant) -> Array:
 	var out: Array = []
 	if typeof(raw) != TYPE_DICTIONARY:
 		return out

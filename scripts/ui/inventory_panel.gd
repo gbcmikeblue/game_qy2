@@ -235,19 +235,28 @@ func _rebuild_quest() -> void:
 	_quest_lines.clear()
 
 	var row := 0
-	var quest := QuestService.current_quest()
-	if quest.is_empty():
+	# 任务可并行接取：这里列出所有进行中的任务，每条三行（进度 / 奖励 / 目标）。
+	var active := QuestService.active_quests()
+	if active.is_empty():
 		row = _add_quest_line(row, Locale.t("quest.none"))
 	else:
-		row = _add_quest_line(row, Locale.t("quest.line.current", [
-			Locale.t(String(quest.get("title_key", "quest.unknown.title"))),
-			QuestService.current_progress(),
-			QuestService.current_required(),
-		]))
-		row = _add_quest_line(row, Locale.t("quest.line.reward", [
-			int(quest.get("reward_gold", 0)), _reward_items_text(quest)]))
-		row = _add_quest_line(row, Locale.t("quest.line.hint",
-				[Locale.t(ENEMY_KEY_PREFIX + String(quest.get("target", "")))]))
+		for entry: Variant in active:
+			if typeof(entry) != TYPE_DICTIONARY:
+				continue
+			var quest := entry as Dictionary
+			var quest_id := String(quest.get("id", ""))
+			var required := int(quest.get("required", 0))
+			var current := int(QuestService.progress.get(quest_id, 0))
+			var title := Locale.t(String(quest.get("title_key", "quest.unknown.title")))
+			var line := Locale.t("quest.line.current", [title, current, required])
+			if QuestService.is_ready_to_turn_in(quest_id):
+				line = Locale.t("quest.progress.ready", [title, current, required])
+			row = _add_quest_line(row, line)
+			row = _add_quest_line(row, Locale.t("quest.line.reward", [
+				int(quest.get("reward_gold", 0)), _reward_items_text(quest)]))
+			row = _add_quest_line(row, Locale.t("quest.line.hint",
+					[Locale.t(ENEMY_KEY_PREFIX + String(quest.get("target", "")))]))
+			row += 1   # 任务之间空一行
 
 	row += 1   # 空一行，把「已完成」与当前任务分开
 	row = _add_quest_line(row, Locale.t("quest.completed_title"))

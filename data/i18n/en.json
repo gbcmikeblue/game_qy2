@@ -7,6 +7,7 @@
 
   "quest.progress": "Quest: %s %d/%d",
   "quest.progress.ready": "Quest ready: %s %d/%d (turn in)",
+  "quest.progress.more": " (+%d more)",
   "quest.completed": "Quest complete: %s",
   "quest.unknown.title": "Unknown quest",
   "quest.line.current": "Active: %s %d/%d",
@@ -148,6 +149,8 @@
 
   "button.inventory": "BAG",
   "button.skill": "SKILL",
+  "button.quest": "QUEST",
+  "hud.mp": "MP %d/%d",
   "button.skill.heavy": "SMASH",
   "skill.heavy.name": "Heavy Strike",
   "skill.whirlwind.name": "Whirlwind",

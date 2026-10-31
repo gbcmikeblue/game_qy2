@@ -14,16 +14,22 @@ const HP_FILL_INSET := 2.0
 const NO_UI_SCALE := ["DebugLabel"]
 const SETTINGS_PANEL := preload("res://scenes/ui/settings_panel.tscn")
 const INVENTORY_PANEL := preload("res://scenes/ui/inventory_panel.tscn")
+## 任务页签在背包面板里的索引（与 inventory_panel.TAB_KEYS 对应）。
+const QUEST_TAB_INDEX := 4
 
 @onready var _debug_label: Label = $DebugLabel
 @onready var _hp_back: ColorRect = $HpBack
 @onready var _hp_fill: ColorRect = $HpFill
 @onready var _hp_label: Label = $HpLabel
+@onready var _mp_back: ColorRect = $MpBack
+@onready var _mp_fill: ColorRect = $MpFill
+@onready var _mp_label: Label = $MpLabel
 @onready var _attack_button = $AttackButton
 @onready var _skill_button = $SkillButton
 @onready var _skill2_button = $Skill2Button
 @onready var _settings_button: UiButton = $SettingsButton
 @onready var _inventory_button: UiButton = $InventoryButton
+@onready var _quest_button: UiButton = $QuestButton
 @onready var _hint_label: Label = $HintLabel
 @onready var _quest_label: Label = $QuestLabel
 
@@ -73,6 +79,7 @@ func _ready() -> void:
 
 	_settings_button.pressed.connect(_on_settings_pressed)
 	_inventory_button.pressed.connect(_on_inventory_pressed)
+	_quest_button.pressed.connect(_on_quest_pressed)
 	Locale.language_changed.connect(_on_texts_changed)
 	GameSettings.bindings_changed.connect(_on_texts_changed)
 	EventBus.quest_updated.connect(_on_quest_changed)
@@ -118,6 +125,9 @@ func _apply_fonts() -> void:
 	_quest_label.add_theme_font_size_override("font_size", DisplayAdapter.text_px("helper"))
 	_settings_button.font_size = DisplayAdapter.text_px("helper")
 	_settings_button.queue_redraw()
+	_mp_label.add_theme_font_size_override("font_size", DisplayAdapter.text_px("helper"))
+	_quest_button.font_size = DisplayAdapter.text_px("helper")
+	_quest_button.queue_redraw()
 	_inventory_button.font_size = DisplayAdapter.text_px("helper")
 	_inventory_button.queue_redraw()
 
@@ -248,6 +258,7 @@ func _on_texts_changed(_arg: Variant = null) -> void:
 func _refresh_texts() -> void:
 	_settings_button.set_caption(Locale.t("button.settings"))
 	_inventory_button.set_caption(Locale.t("button.inventory"))
+	_quest_button.set_caption(Locale.t("button.quest"))
 	for button: Control in _skill_buttons:
 		var def := DataRegistry.get_skill(button.skill_id)
 		button.set_caption(Locale.t(String(def.get("button_key", "button.skill"))))
@@ -257,6 +268,43 @@ func _refresh_texts() -> void:
 
 ## 主操作按钮文案：由当前选中目标的类型决定，未选中时回退为"攻击"。
 ## 文案 key 变化时同步刷新底部提示，避免按钮与提示不一致。
+## ---------------- 验收接口 ----------------
+
+func hp_text() -> String:
+	return _hp_label.text
+
+
+func mp_text() -> String:
+	return _mp_label.text
+
+
+## 魔力条当前填充比例（0..1），用于验证「魔力掉血后条变短」。
+func mp_fill_ratio() -> float:
+	var full := maxf(1.0, _mp_back.size.x - HP_FILL_INSET * 2.0)
+	return _mp_fill.size.x / full
+
+
+func button_is_circular(node_name: String) -> bool:
+	var node := get_node_or_null(NodePath(node_name))
+	return node is UiButton and (node as UiButton).circular
+
+
+func button_icon(node_name: String) -> String:
+	var node := get_node_or_null(NodePath(node_name))
+	return (node as UiButton).icon if node is UiButton else ""
+
+
+func press_quest_button() -> void:
+	_on_quest_pressed()
+
+
+## 当前打开的面板页签索引；没有面板返回 -1。
+func open_panel_tab() -> int:
+	if not is_instance_valid(_panel) or not _panel.has_method("current_tab"):
+		return -1
+	return int(_panel.current_tab())
+
+
 ## 验收用：主操作按钮当前的主色与文案。
 func action_button_accent() -> Color:
 	return _attack_button.accent()
@@ -301,9 +349,19 @@ func _on_settings_pressed() -> void:
 
 
 func _on_inventory_pressed() -> void:
+	_open_panel(0)
+
+
+## 任务按钮：独立入口，直接落在任务页签（第 5 个）。
+func _on_quest_pressed() -> void:
+	_open_panel(QUEST_TAB_INDEX)
+
+
+func _open_panel(initial_tab: int) -> void:
 	if is_instance_valid(_panel):
 		return
 	_panel = INVENTORY_PANEL.instantiate()
+	_panel.initial_tab = initial_tab
 	add_child(_panel)
 	if _panel.has_signal("closed"):
 		_panel.closed.connect(_on_panel_closed)
@@ -324,11 +382,17 @@ func _update_health() -> void:
 	# 宽度按 HpBack 的实时宽度取比例（锚点化后血条宽度随安全区/视口变化）。
 	var full_width := maxf(0.0, _hp_back.size.x - HP_FILL_INSET * 2.0)
 	_hp_fill.size = Vector2(full_width * ratio, _hp_fill.size.y)
-	if player.has_method("get_mp"):
-		_hp_label.text = Locale.t("hud.hp_mp", [current, maximum,
-				int(player.get_mp()), int(player.get_max_mp())])
-	else:
-		_hp_label.text = Locale.t("hud.hp", [current, maximum])
+	_hp_label.text = Locale.t("hud.hp", [current, maximum])
+
+	# 魔力条独立成一条，放在生命条下方（需求：魔力值 UI 置于生命 UI 之下）。
+	if not player.has_method("get_mp"):
+		return
+	var current_mp := int(player.get_mp())
+	var max_mp := int(player.get_max_mp()) if player.has_method("get_max_mp") else 0
+	var mp_full := maxf(0.0, _mp_back.size.x - HP_FILL_INSET * 2.0)
+	var mp_ratio := clampf(float(current_mp) / float(maxi(1, max_mp)), 0.0, 1.0)
+	_mp_fill.size = Vector2(mp_full * mp_ratio, _mp_fill.size.y)
+	_mp_label.text = Locale.t("hud.mp", [current_mp, max_mp])
 
 
 ## 选中行：只展示当前选中目标（选中由点击完成，与攻击无关）。

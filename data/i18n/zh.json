@@ -7,6 +7,7 @@
 
   "quest.progress": "任务：%s %d/%d",
   "quest.progress.ready": "任务达成：%s %d/%d（回去交付）",
+  "quest.progress.more": "（另有 %d 个进行中）",
   "quest.completed": "任务完成：%s",
   "quest.unknown.title": "未知任务",
   "quest.line.current": "当前：%s %d/%d",
@@ -148,6 +149,8 @@
 
   "button.inventory": "背包",
   "button.skill": "技能",
+  "button.quest": "任务",
+  "hud.mp": "魔法 %d/%d",
   "button.skill.heavy": "重击",
   "skill.heavy.name": "重击",
   "skill.whirlwind.name": "旋风斩",
