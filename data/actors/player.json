@@ -2,6 +2,7 @@
   "player": {
     "display_name": "HERO",
     "max_hp": 120,
+    "max_mp": 30,
     "attack": 20,
     "defense": 5,
     "crit_rate": 0.1,

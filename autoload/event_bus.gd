@@ -15,3 +15,16 @@ signal game_paused(is_paused: bool)
 signal player_died
 signal player_respawned
 signal enemy_died(enemy_id: String)
+
+## ---------------- 阶段 C：物品与成长 ----------------
+## 背包内容或容量变化（UI 全量刷新）。
+signal inventory_changed
+## 某个槽位的装备变化；item_id 为空表示卸下。
+signal equipment_changed(slot: String, item_id: String)
+signal gold_changed(gold: int)
+signal level_changed(level: int, exp: int)
+## 地面上拾取到物品（飘字与音效入口）。
+signal item_picked_up(item_id: String, qty: int)
+## 请求打开/关闭商店（UI 只发请求，交易结果走 gold/inventory 事件）。
+signal shop_requested(open: bool)
+signal save_written(slot: int)
