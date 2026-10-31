@@ -30,6 +30,8 @@ class DummyTarget extends Node2D:
 
 
 func _ready() -> void:
+	# 验收不写用户的自动存档：本文件里会升级、会装备，会触发 level_changed 自动存档。
+	SaveService.autosave_enabled = false
 	_test_registry_load()
 	_test_slot_validation()
 	_test_stack_normalization()
@@ -48,6 +50,8 @@ func _ready() -> void:
 	await _test_equipment_affects_player()
 	await _test_inventory_panel()
 	await _test_shop()
+	await _test_save()
+	SaveService.autosave_enabled = true
 	InventoryService.reset()
 	_report()
 
@@ -489,6 +493,97 @@ func _test_shop() -> void:
 	InventoryService.capacity = 24
 	panel.close_panel()
 	await get_tree().process_frame
+	InventoryService.reset()
+
+
+# ---------------- 14–17 / 22. 存档：往返 / 槽位隔离 / 篡改 / 半截写 ----------------
+
+func _test_save() -> void:
+	for slot in range(1, SaveService.SLOT_COUNT + 1):
+		SaveService.delete_slot(slot)
+
+	var hero = PLAYER_SCENE.instantiate()
+	add_child(hero)
+	GameManager.player = hero
+	await get_tree().process_frame
+
+	# ---- 14 + 22：往返一致，且读档不触发死亡 ----
+	InventoryService.reset()
+	InventoryService.add_item(&"mat_wolf_fang", 7)
+	InventoryService.add_item(&"wep_rusty_sword", 1)
+	InventoryService.equip(&"wep_rusty_sword")
+	InventoryService.gold = 123
+	InventoryService.exp = 40
+	hero.global_position = Vector2(320, 256)
+	hero.set_hp(77)
+
+	_check(SaveService.save_slot(1), "1 号槽写入成功")
+	_check(SaveService.has_save(1), "存档文件已生成")
+
+	InventoryService.reset()
+	hero.global_position = Vector2.ZERO
+	hero.set_hp(hero.get_max_hp())
+
+	_check(SaveService.load_slot(1), "1 号槽读取成功")
+	_check(InventoryService.gold == 123, "金币往返一致（%d）" % InventoryService.gold)
+	_check(InventoryService.count_of(&"mat_wolf_fang") == 7,
+			"背包数量往返一致（%d）" % InventoryService.count_of(&"mat_wolf_fang"))
+	_check(InventoryService.equipped_in("weapon") == &"wep_rusty_sword", "装备往返一致")
+	_check(InventoryService.exp == 40, "经验往返一致（%d）" % InventoryService.exp)
+	_check(int(round(hero.global_position.x)) == 320 and int(round(hero.global_position.y)) == 256,
+			"坐标往返一致（%s）" % str(hero.global_position))
+	_check(hero.get_hp() == 77, "血量往返一致（%d）" % hero.get_hp())
+	_check(hero.get_hp() > 0 and hero.is_alive(), "读档后不触发死亡判定")
+
+	# ---- 15：3 个槽位互不覆盖 ----
+	InventoryService.reset()
+	InventoryService.gold = 10
+	SaveService.save_slot(1)
+	InventoryService.gold = 20
+	SaveService.save_slot(2)
+
+	SaveService.load_slot(1)
+	_check(InventoryService.gold == 10, "1 号槽内容不受 2 号槽影响（%d）" % InventoryService.gold)
+	SaveService.load_slot(2)
+	_check(InventoryService.gold == 20, "2 号槽独立保存（%d）" % InventoryService.gold)
+
+	# ---- 16：篡改内容后 CRC 不匹配，拒绝载入且不改运行时 ----
+	InventoryService.reset()
+	InventoryService.gold = 55
+	SaveService.save_slot(3)
+	var path := SaveService.slot_path(3)
+	var parsed: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(path))
+	parsed["payload"]["player"]["gold"] = 9999
+	var handle := FileAccess.open(path, FileAccess.WRITE)
+	handle.store_string(JSON.stringify(parsed))
+	handle.close()
+
+	var gold_before: int = InventoryService.gold
+	_check(not SaveService.load_slot(3), "被篡改的存档拒绝载入")
+	_check(InventoryService.gold == gold_before, "拒绝载入后运行时状态不变（%d）" % InventoryService.gold)
+
+	# ---- 17：临时文件写一半（未 rename）不影响旧档 ----
+	InventoryService.reset()
+	InventoryService.gold = 33
+	SaveService.save_slot(2)
+	var tmp_path := SaveService.slot_path(2) + ".tmp"
+	var tmp_file := FileAccess.open(tmp_path, FileAccess.WRITE)
+	tmp_file.store_string("{\"schema_version\":1,\"crc\":0,\"payload\":{")
+	tmp_file.close()
+
+	InventoryService.reset()
+	_check(SaveService.load_slot(2), "存在半截临时文件时旧档仍可读")
+	_check(InventoryService.gold == 33, "旧档内容未被半截写破坏（%d）" % InventoryService.gold)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp_path))
+	_check(not FileAccess.file_exists(tmp_path), "半截临时文件可清理")
+
+	# 收尾：不留下任何存档文件与假玩家
+	for slot in range(1, SaveService.SLOT_COUNT + 1):
+		SaveService.delete_slot(slot)
+	_check(not SaveService.has_save(1) and not SaveService.has_save(2), "清理后无残留存档")
+	GameManager.player = null
+	remove_child(hero)
+	hero.queue_free()
 	InventoryService.reset()
 
 

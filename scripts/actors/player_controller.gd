@@ -171,6 +171,12 @@ func heal(amount: int) -> void:
 		_health.heal(amount)
 
 
+## 读档恢复血量：不触发死亡判定，也不进入无敌帧。
+func set_hp(value: int) -> void:
+	if _health != null:
+		_health.set_hp(value)
+
+
 func get_mp() -> int:
 	return 0
 

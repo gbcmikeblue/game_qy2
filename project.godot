@@ -25,6 +25,7 @@ InputManager="*res://autoload/input_manager.gd"
 DataRegistry="*res://autoload/data_registry.gd"
 ItemRegistry="*res://scripts/items/item_registry.gd"
 InventoryService="*res://scripts/items/inventory_service.gd"
+SaveService="*res://scripts/items/save_service.gd"
 
 [display]
 

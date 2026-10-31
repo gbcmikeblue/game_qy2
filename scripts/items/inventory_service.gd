@@ -37,6 +37,49 @@ func reset() -> void:
 	capacity = 24
 
 
+## 读档：用存档内容整体替换运行时状态。
+## 未知物品（存档里引用了已删除的定义）会被跳过而不是让读档失败；
+## 超过容量或堆叠上限的条目会被裁剪，保证运行时状态始终自洽。
+func restore_state(data: Dictionary) -> void:
+	var new_items: Array[Dictionary] = []
+	var raw_items: Variant = data.get("inventory", [])
+	if typeof(raw_items) == TYPE_ARRAY:
+		for entry: Variant in raw_items:
+			if typeof(entry) != TYPE_DICTIONARY:
+				continue
+			var item_id := StringName(String((entry as Dictionary).get("id", "")))
+			var def := ItemRegistry.get_item(item_id)
+			if def == null:
+				push_warning("读档跳过未知物品：%s" % item_id)
+				continue
+			var qty := mini(int((entry as Dictionary).get("qty", 0)), def.effective_max_stack())
+			if qty <= 0 or new_items.size() >= capacity:
+				continue
+			new_items.append({"id": item_id, "qty": qty})
+
+	var new_equipment: Dictionary = {}
+	var raw_equipment: Variant = data.get("equipment", {})
+	if typeof(raw_equipment) == TYPE_DICTIONARY:
+		for slot: Variant in (raw_equipment as Dictionary):
+			var item_id := StringName(String((raw_equipment as Dictionary)[slot]))
+			var def := ItemRegistry.get_item(item_id)
+			# 槽位与物品定义必须对得上（防止改档或旧版本残留把错件塞进槽里）。
+			if def != null and def.is_equipment() and String(def.slot) == String(slot):
+				new_equipment[String(slot)] = item_id
+
+	items = new_items
+	equipment = new_equipment
+	gold = maxi(0, int(data.get("gold", 0)))
+	level = maxi(1, int(data.get("level", 1)))
+	exp = maxi(0, int(data.get("exp", 0)))
+
+	EventBus.inventory_changed.emit()
+	for slot: String in equipment:
+		EventBus.equipment_changed.emit(slot, String(equipment[slot]))
+	EventBus.gold_changed.emit(gold)
+	EventBus.level_changed.emit(level, exp)
+
+
 # ---------------- 背包 ----------------
 
 ## 入包并返回**实际**入包数量；先补已有堆叠，再占新格，满了就只入一部分。

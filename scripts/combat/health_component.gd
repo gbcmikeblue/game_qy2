@@ -44,6 +44,13 @@ func reset_full() -> void:
 	hp_changed.emit(hp, max_hp)
 
 
+## 直接设定当前血量（读档用），夹紧到 [0, max_hp]，不触发死亡判定。
+func set_hp(value: int) -> void:
+	hp = clampi(value, 0, max_hp)
+	is_dead = false
+	hp_changed.emit(hp, max_hp)
+
+
 ## 上限变化（升级、装备 +HP 时调用）。
 ## 上限增加时把同样的增量补到当前血量，避免「升级后血条反而变短」；
 ## 上限减少（卸装）时只夹紧当前值，不额外扣血。
