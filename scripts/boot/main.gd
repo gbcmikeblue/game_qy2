@@ -52,11 +52,46 @@ func _ready() -> void:
 	DisplayAdapter.layout_changed.connect(_apply_layout)
 	_apply_layout()
 
+	# 供存档服务查询/切换地图：读档时若存档在别的地图，先切图再恢复位置。
+	SaveService.current_map_id = String(map.map_id)
+	SaveService.map_switcher = switch_map
+
 	# 主菜单选了「读取存档」：等玩家、地图、HUD 都就绪后再恢复，
 	# 否则位置与血量会写到还不存在的节点上。
 	var pending := SaveService.consume_pending_slot()
 	if pending > 0 and not SaveService.load_slot(pending):
 		push_warning("读档失败（槽 %d），按新游戏继续" % pending)
+
+
+## 换图：保留玩家节点与状态，只重建地图，并把依赖地图的引用重新接上
+## （实体挂载点、寻路、掉落挂载点、相机限位）。spawn_cell 为 (-1,-1) 时用新图出生点。
+func switch_map(next_id: String, spawn_cell := Vector2i(-1, -1)) -> bool:
+	if map != null and String(map.map_id) == next_id:
+		return false
+
+	player.clear_targets()
+	map.get_entity_root().remove_child(player)
+	world.remove_child(map)
+	map.queue_free()
+
+	map = MAP_SCENE.instantiate()
+	map.map_id = next_id
+	world.add_child(map)
+
+	map.get_entity_root().add_child(player)
+	var cell: Vector2i = spawn_cell if spawn_cell != Vector2i(-1, -1) else map.player_spawn
+	player.global_position = Iso.grid_to_world(cell)
+	player.spawn_point = player.global_position
+	player.velocity = Vector2.ZERO
+	player.setup_navigation(map)
+
+	if loot_service != null:
+		loot_service.entity_root = map.get_entity_root()
+
+	SaveService.current_map_id = next_id
+	_apply_camera_limits()
+	_apply_layout()
+	return true
 
 
 func _exit_tree() -> void:

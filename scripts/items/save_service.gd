@@ -22,6 +22,11 @@ var autosave_enabled := true
 ## 直接在主菜单里 load 是不行的：那时 GameManager.player 还不存在。
 var pending_slot := 0
 
+## 当前所在地图 id：由 main 在启动与换图后写入，存档据此记录与还原。
+var current_map_id := "test_map_01"
+## 换图回调（main 注册）：读档时若存档在别的地图，先切图再恢复位置。
+var map_switcher: Callable = Callable()
+
 
 func _ready() -> void:
 	# 自动存档时机（决策 D-01 的可落地部分）：升级与退出。
@@ -107,6 +112,10 @@ func load_slot(slot: int) -> bool:
 		return false
 
 	var payload: Dictionary = _migrate(record["payload"], int(record["schema_version"]))
+	# 先切到存档所在地图，再恢复背包与坐标：否则位置会被写进另一张图的坐标系里。
+	var target_map := String(payload.get("map", ""))
+	if not target_map.is_empty() and map_switcher.is_valid():
+		map_switcher.call(target_map)
 	# 存档里 player 是嵌套结构，restore_state 要吃扁平字段，这里做一次映射。
 	var player_data: Dictionary = {}
 	var raw_player: Variant = payload.get("player", {})
@@ -153,6 +162,7 @@ func snapshot() -> Dictionary:
 		equipment[slot] = String(InventoryService.equipment[slot])
 
 	return {
+		"map": current_map_id,
 		"player": {
 			"level": InventoryService.level,
 			"exp": InventoryService.exp,

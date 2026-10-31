@@ -1,12 +1,15 @@
 extends Node2D
 class_name TestMap
 
-## 阶段 A/B 测试地图：读取 data/maps/test_map_01.json，程序化生成地面、围墙、道具和怪物。
+## 地图：按 map_id 读取 data/maps/<id>.json，程序化生成地面、围墙、道具和怪物。
 ## 对外暴露：实体挂载点、出生点、世界边界、阻挡查询、路径器、刷怪入口。
 
-const MAP_PATH := "res://data/maps/test_map_01.json"
+## 地图数据目录：换图只改 map_id，不需要再新建场景。
+const MAP_DIR := "res://data/maps/"
 const ENEMY_SCENE := preload("res://scenes/actors/enemy/enemy.tscn")
 
+## 由 main 在 add_child 之前设置；换图即换这个 id。
+@export var map_id := "test_map_01"
 var grid_size := Vector2i(24, 24)
 var player_spawn := Vector2i(12, 14)
 
@@ -25,6 +28,10 @@ func _ready() -> void:
 	_build_walls()
 	_build_props()
 	_build_enemies()
+
+
+func map_path() -> String:
+	return MAP_DIR + map_id + ".json"
 
 
 func get_entity_root() -> Node2D:
@@ -133,17 +140,18 @@ func _spawn_prop(kind: int, cell: Vector2i, footprint: Vector2i) -> void:
 
 
 func _load_map_data() -> void:
-	if not FileAccess.file_exists(MAP_PATH):
-		push_error("地图配置缺失: %s" % MAP_PATH)
+	var path := map_path()
+	if not FileAccess.file_exists(path):
+		push_error("地图配置缺失: %s" % path)
 		return
-	var file := FileAccess.open(MAP_PATH, FileAccess.READ)
+	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
-		push_error("地图配置读取失败: %s" % MAP_PATH)
+		push_error("地图配置读取失败: %s" % path)
 		return
 	var parsed: Variant = JSON.parse_string(file.get_as_text())
 	file.close()
 	if typeof(parsed) != TYPE_DICTIONARY:
-		push_error("地图配置不是合法 JSON 对象: %s" % MAP_PATH)
+		push_error("地图配置不是合法 JSON 对象: %s" % path)
 		return
 	_map_data = parsed as Dictionary
 

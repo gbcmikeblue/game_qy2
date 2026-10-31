@@ -178,6 +178,15 @@ func set_hp(value: int) -> void:
 		_health.set_hp(value)
 
 
+## 换图前清空锁定/仇恨残留：旧图的敌人马上要被释放，不能留下悬空引用。
+func clear_targets() -> void:
+	_set_locked_target(null)
+	_aggro_latch = null
+	_aggro_latch_left = 0.0
+	cancel_auto_attack()
+	cancel_auto_approach()
+
+
 func get_mp() -> int:
 	return 0
 

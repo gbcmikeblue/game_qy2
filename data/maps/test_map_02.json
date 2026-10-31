@@ -1,0 +1,27 @@
+{
+  "id": "test_map_02",
+  "display_name": "Iso Test Hamlet",
+  "grid_size": [20, 20],
+  "road_u": [9, 10],
+  "player_spawn": [10, 10],
+  "props": [
+    { "type": "building", "u": 5, "v": 5, "w": 3, "h": 3 },
+    { "type": "building", "u": 13, "v": 6, "w": 3, "h": 4 },
+
+    { "type": "tree", "u": 3, "v": 12 },
+    { "type": "tree", "u": 4, "v": 13 },
+    { "type": "tree", "u": 16, "v": 13 },
+    { "type": "tree", "u": 15, "v": 15 },
+    { "type": "tree", "u": 7, "v": 16 },
+    { "type": "tree", "u": 12, "v": 4 },
+
+    { "type": "rock", "u": 10, "v": 4 },
+    { "type": "rock", "u": 5, "v": 9 }
+  ],
+  "enemies": [
+    { "type": "cave_bat", "u": 4, "v": 4 },
+    { "type": "forest_wolf", "u": 15, "v": 4 },
+    { "type": "stone_boar", "u": 16, "v": 16 },
+    { "type": "cave_bat", "u": 4, "v": 16 }
+  ]
+}

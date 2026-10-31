@@ -10,6 +10,7 @@ const LOOT_DIR := "res://data/items/loot"
 const LOOT_SERVICE := preload("res://scripts/items/loot_service.gd")
 const PLAYER_SCENE := preload("res://scenes/actors/player/player.tscn")
 const MAIN_MENU := preload("res://scenes/ui/main_menu.tscn")
+const GAME_SCENE := preload("res://scenes/boot/main.tscn")
 const INVENTORY_PANEL := preload("res://scenes/ui/inventory_panel.tscn")
 
 var _failures: Array[String] = []
@@ -54,6 +55,7 @@ func _ready() -> void:
 	await _test_save()
 	await _test_save_panel()
 	await _test_main_menu()
+	await _test_multi_map()
 	SaveService.autosave_enabled = true
 	InventoryService.reset()
 	_report()
@@ -672,6 +674,53 @@ func _test_main_menu() -> void:
 
 	SaveService.delete_slot(2)
 	menu.queue_free()
+	await get_tree().process_frame
+	InventoryService.reset()
+
+
+# ---------------- 多地图：切图重建 / 玩家与引用重挂 / 存档带地图 ----------------
+
+func _test_multi_map() -> void:
+	SaveService.delete_slot(3)
+	InventoryService.reset()
+	var game = GAME_SCENE.instantiate()
+	add_child(game)
+	await get_tree().process_frame
+
+	_check(String(game.map.map_id) == "test_map_01", "初始地图是 test_map_01（%s）" % game.map.map_id)
+	var size_before: Vector2i = game.map.grid_size
+	var hero = GameManager.player
+	_check(hero != null, "玩家已创建")
+	if hero == null:
+		remove_child(game)
+		game.queue_free()
+		return
+
+	var switched: bool = game.switch_map("test_map_02")
+	_check(switched, "切图到 test_map_02 成功")
+	_check(String(game.map.map_id) == "test_map_02", "当前地图已切换（%s）" % game.map.map_id)
+	_check(game.map.grid_size != size_before,
+			"新图尺寸不同（%s → %s）" % [str(size_before), str(game.map.grid_size)])
+	_check(hero.get_parent() == game.map.get_entity_root(), "玩家挂到新图的实体容器")
+	var spawn_offset: float = hero.global_position.distance_to(game.map.spawn_world_position())
+	_check(spawn_offset < 2.0, "玩家落在新图出生点（偏差 %.1f）" % spawn_offset)
+	_check(game.map.get_pathfinder() != null, "新图寻路已建好")
+	_check(String(SaveService.current_map_id) == "test_map_02", "存档记录的地图同步更新")
+
+	# 在新图存档 → 切回旧图 → 读档：应自动切回存档所在地图
+	InventoryService.gold = 42
+	_check(SaveService.save_slot(3), "在新图存档成功")
+	game.switch_map("test_map_01")
+	_check(String(game.map.map_id) == "test_map_01", "已切回 test_map_01")
+	_check(SaveService.load_slot(3), "读取该槽成功")
+	_check(String(game.map.map_id) == "test_map_02",
+			"读档自动切回存档所在地图（%s）" % game.map.map_id)
+	_check(InventoryService.gold == 42, "读档金币一致（%d）" % InventoryService.gold)
+
+	SaveService.delete_slot(3)
+	SaveService.map_switcher = Callable()
+	remove_child(game)
+	game.queue_free()
 	await get_tree().process_frame
 	InventoryService.reset()
 
