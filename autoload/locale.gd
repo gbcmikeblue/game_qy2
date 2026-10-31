@@ -7,7 +7,8 @@ extends Node
 signal language_changed(code: String)
 
 const SUPPORTED := ["en", "zh"]
-const DEFAULT_LANGUAGE := "en"
+## 默认语言：中文（界面与文案以中文为第一语言，英文为第二语言）。
+const DEFAULT_LANGUAGE := "zh"
 const SAVE_PATH := "user://locale.cfg"
 const I18N_DIR := "res://data/i18n/"
 ## 内置正文/标题字体：霞鹜文楷 Lite（SIL OFL 1.1，中文全覆盖）。
