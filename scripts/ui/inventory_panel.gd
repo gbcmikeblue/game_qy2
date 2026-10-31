@@ -21,6 +21,8 @@ const FONT_HELPER := 17
 const CONTENT_RECT := Rect2(20.0, 116.0, 680.0, 314.0)
 const ROW_HEIGHT := 52.0
 const SHOP_ROW_HEIGHT := 44.0
+## 与 SaveService.SLOT_COUNT 保持一致（面板只做展示，槽位数量由服务层决定）。
+const SAVE_SLOT_ROWS := 3
 const ROW_WIDTH := 660.0
 const ICON_SIZE := 34.0
 ## 槽位文案 key 前缀：用拼接而不是模板串，否则 i18n 验收会把 "inv.slot.%s" 当成缺失词条。
@@ -37,6 +39,7 @@ var _title: Label
 var _bag_tab: UiButton
 var _equip_tab: UiButton
 var _shop_tab: UiButton
+var _save_tab: UiButton
 var _content: Control
 var _bag_page: Control
 var _equip_page: Control
@@ -52,6 +55,10 @@ var _buy_rows: Control
 var _sell_rows: Control
 var _buy_header: Label
 var _sell_header: Label
+var _save_page: Control
+## 每个槽位一行的信息标签（读档/存档后刷新文本与按钮可用性）。
+var _save_info: Array[Label] = []
+var _save_load_buttons: Array[UiButton] = []
 
 var _tab := 0
 var _hint_left := 0.0
@@ -115,6 +122,8 @@ func _build() -> void:
 	_equip_tab.pressed.connect(_switch_tab.bind(1))
 	_shop_tab = _button(_panel, Vector2(340.0, 62.0), Vector2(150.0, 40.0))
 	_shop_tab.pressed.connect(_switch_tab.bind(2))
+	_save_tab = _button(_panel, Vector2(498.0, 62.0), Vector2(150.0, 40.0))
+	_save_tab.pressed.connect(_switch_tab.bind(3))
 
 	_content = Control.new()
 	_content.position = CONTENT_RECT.position
@@ -125,6 +134,7 @@ func _build() -> void:
 	_build_bag_page()
 	_build_equip_page()
 	_build_shop_page()
+	_build_save_page()
 
 	_gold_label = _label(Vector2(24.0, 440.0), Vector2(190.0, 34.0), FONT_BODY, _panel)
 	_capacity_label = _label(Vector2(220.0, 440.0), Vector2(220.0, 34.0), FONT_BODY, _panel)
@@ -177,6 +187,76 @@ func _build_shop_page() -> void:
 	_sell_rows = _make_shop_column(_shop_page, 350.0)
 
 
+## 存档页签：3 个槽位，每行「保存 / 读取」，空槽的读取置灰。
+func _build_save_page() -> void:
+	_save_page = Control.new()
+	_save_page.size = CONTENT_RECT.size
+	_save_page.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_save_page.visible = false
+	_content.add_child(_save_page)
+
+
+func _rebuild_save() -> void:
+	for child: Node in _save_page.get_children():
+		_save_page.remove_child(child)
+		child.queue_free()
+	_save_info.clear()
+	_save_load_buttons.clear()
+
+	for index in SAVE_SLOT_ROWS:
+		var slot := index + 1
+		var y := float(index) * 72.0
+		var title := _label(Vector2(8.0, y + 10.0), Vector2(90.0, 34.0), FONT_BODY, _save_page)
+		title.text = Locale.t("inv.slot.title", [slot])
+
+		var info := _label(Vector2(100.0, y + 10.0), Vector2(320.0, 34.0), FONT_HELPER, _save_page)
+		_save_info.append(info)
+
+		var save_button := _button(_save_page, Vector2(440.0, y + 2.0), Vector2(100.0, 40.0))
+		save_button.set_caption(Locale.t("inv.save.action"))
+		save_button.pressed.connect(_on_save_slot_pressed.bind(index))
+
+		var load_button := _button(_save_page, Vector2(550.0, y + 2.0), Vector2(100.0, 40.0))
+		load_button.set_caption(Locale.t("inv.load.action"))
+		load_button.pressed.connect(_on_load_slot_pressed.bind(index))
+		_save_load_buttons.append(load_button)
+
+	_refresh_save_rows()
+
+
+## 槽位信息来自磁盘（不是运行时状态），所以保存/读取后都要重刷。
+func _refresh_save_rows() -> void:
+	for index in _save_info.size():
+		var slot := index + 1
+		var info := SaveService.slot_info(slot)
+		if info.is_empty():
+			_save_info[index].text = Locale.t("inv.slot.empty")
+		else:
+			_save_info[index].text = Locale.t("inv.slot.summary", [
+				int(info["level"]), int(info["gold"]), int(info["inventory_size"])])
+		if index < _save_load_buttons.size():
+			_save_load_buttons[index].set_disabled(info.is_empty())
+
+
+func _on_save_slot_pressed(index: int) -> void:
+	var slot := index + 1
+	if SaveService.save_slot(slot):
+		_show_hint(Locale.t("inv.save.ok", [slot]))
+	else:
+		_show_hint(Locale.t("inv.save.fail", [slot]))
+	_refresh_save_rows()
+
+
+func _on_load_slot_pressed(index: int) -> void:
+	var slot := index + 1
+	if SaveService.load_slot(slot):
+		_show_hint(Locale.t("inv.load.ok", [slot]))
+		_refresh_all()
+	else:
+		_show_hint(Locale.t("inv.load.fail"))
+	_refresh_save_rows()
+
+
 func _make_shop_column(parent: Control, x: float) -> Control:
 	var scroll := ScrollContainer.new()
 	scroll.position = Vector2(x, 30.0)
@@ -221,12 +301,14 @@ func _refresh_texts() -> void:
 	_bag_tab.set_caption(Locale.t("inv.tab.bag"))
 	_equip_tab.set_caption(Locale.t("inv.tab.equip"))
 	_shop_tab.set_caption(Locale.t("inv.tab.shop"))
+	_save_tab.set_caption(Locale.t("inv.tab.save"))
 	_close_button.set_caption(Locale.t("inv.close"))
 	_buy_header.text = Locale.t("inv.shop.buy")
 	_sell_header.text = Locale.t("inv.shop.sell")
 	_bag_tab.set_highlight(_tab == 0)
 	_equip_tab.set_highlight(_tab == 1)
 	_shop_tab.set_highlight(_tab == 2)
+	_save_tab.set_highlight(_tab == 3)
 
 
 func _refresh_all() -> void:
@@ -234,6 +316,7 @@ func _refresh_all() -> void:
 	_rebuild_bag()
 	_rebuild_equip()
 	_rebuild_shop()
+	_rebuild_save()
 	_refresh_footer()
 
 
@@ -466,6 +549,7 @@ func _switch_tab(index: int) -> void:
 	_bag_page.visible = index == 0
 	_equip_page.visible = index == 1
 	_shop_page.visible = index == 2
+	_save_page.visible = index == 3
 	_refresh_texts()
 
 
@@ -611,6 +695,38 @@ func sell_row_item_id(index: int) -> StringName:
 	if index < 0 or index >= _sell_items.size():
 		return &""
 	return _sell_items[index]
+
+
+func save_row_count() -> int:
+	return _save_info.size()
+
+
+func save_row_text(index: int) -> String:
+	if index < 0 or index >= _save_info.size():
+		return ""
+	return _save_info[index].text
+
+
+func load_button_disabled(index: int) -> bool:
+	if index < 0 or index >= _save_load_buttons.size():
+		return true
+	return _save_load_buttons[index].is_disabled()
+
+
+func press_save_slot(index: int) -> bool:
+	if index < 0 or index >= _save_info.size():
+		return false
+	_on_save_slot_pressed(index)
+	return true
+
+
+func press_load_slot(index: int) -> bool:
+	if index < 0 or index >= _save_info.size():
+		return false
+	if _save_load_buttons[index].is_disabled():
+		return false
+	_on_load_slot_pressed(index)
+	return true
 
 
 func switch_tab_to(index: int) -> void:

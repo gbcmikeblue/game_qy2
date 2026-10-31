@@ -51,6 +51,7 @@ func _ready() -> void:
 	await _test_inventory_panel()
 	await _test_shop()
 	await _test_save()
+	await _test_save_panel()
 	SaveService.autosave_enabled = true
 	InventoryService.reset()
 	_report()
@@ -581,6 +582,49 @@ func _test_save() -> void:
 	for slot in range(1, SaveService.SLOT_COUNT + 1):
 		SaveService.delete_slot(slot)
 	_check(not SaveService.has_save(1) and not SaveService.has_save(2), "清理后无残留存档")
+	GameManager.player = null
+	remove_child(hero)
+	hero.queue_free()
+	InventoryService.reset()
+
+
+# ---------------- 存档页签：空槽置灰 / 保存摘要 / 读取恢复 ----------------
+
+func _test_save_panel() -> void:
+	for slot in range(1, SaveService.SLOT_COUNT + 1):
+		SaveService.delete_slot(slot)
+
+	var hero = PLAYER_SCENE.instantiate()
+	add_child(hero)
+	GameManager.player = hero
+	await get_tree().process_frame
+
+	var panel = INVENTORY_PANEL.instantiate()
+	add_child(panel)
+	await get_tree().process_frame
+	panel.switch_tab_to(3)
+
+	_check(panel.current_tab() == 3, "可以切到存档页签")
+	_check(panel.save_row_count() == 3, "存档页有 3 个槽位（%d）" % panel.save_row_count())
+	_check(panel.load_button_disabled(0), "空槽的读取按钮置灰")
+	_check(panel.save_row_text(0) == Locale.t("inv.slot.empty"), "空槽显示「未存档」")
+
+	InventoryService.reset()
+	InventoryService.gold = 88
+	InventoryService.add_item(&"mat_wolf_fang", 3)
+	_check(panel.press_save_slot(0), "点击保存写入 1 号槽")
+	_check(not panel.load_button_disabled(0), "保存后读取按钮可用")
+	_check(panel.save_row_text(0).contains("88"), "槽位摘要显示金币（%s）" % panel.save_row_text(0))
+
+	InventoryService.reset()
+	_check(InventoryService.gold == 0, "清空后金币归零")
+	_check(panel.press_load_slot(0), "点击读取恢复存档")
+	_check(InventoryService.gold == 88 and InventoryService.count_of(&"mat_wolf_fang") == 3,
+			"读档恢复金币与背包（%d / %d）" % [InventoryService.gold, InventoryService.count_of(&"mat_wolf_fang")])
+
+	SaveService.delete_slot(1)
+	panel.close_panel()
+	await get_tree().process_frame
 	GameManager.player = null
 	remove_child(hero)
 	hero.queue_free()
