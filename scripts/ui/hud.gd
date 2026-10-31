@@ -12,6 +12,14 @@ const HP_FILL_INSET := 2.0
 ## 调试信息不参与 ui_scale，避免大字号下撑高压到左下角血条（见 NO_UI_SCALE）。
 ## 调试信息不参与界面缩放：它的行数会撑高控件，放大后会压到左下角血条区。
 const NO_UI_SCALE := ["DebugLabel"]
+## 这些控件不用「基准边距 + 安全区位移」那套，改为按剩余空间手工计算（任务区）。
+const MANUAL_LAYOUT := ["QuestScroll"]
+## 任务区高度（逻辑像素，随 ui_scale 缩放）：约三行，超出后纵向滚动。
+const QUEST_AREA_HEIGHT := 72.0
+## 右侧为顶部圆形按钮预留的宽度（3 个 56 按钮 + 间距 + 外边距）。
+const QUEST_RIGHT_RESERVED := 216.0
+## 任务区最小宽度：太窄时优先保证可读，不再压缩。
+const QUEST_MIN_WIDTH := 180.0
 const SETTINGS_PANEL := preload("res://scenes/ui/settings_panel.tscn")
 const INVENTORY_PANEL := preload("res://scenes/ui/inventory_panel.tscn")
 ## 任务页签在背包面板里的索引（与 inventory_panel.TAB_KEYS 对应）。
@@ -31,7 +39,8 @@ const QUEST_TAB_INDEX := 4
 @onready var _inventory_button: UiButton = $InventoryButton
 @onready var _quest_button: UiButton = $QuestButton
 @onready var _hint_label: Label = $HintLabel
-@onready var _quest_label: Label = $QuestLabel
+@onready var _quest_scroll: ScrollContainer = $QuestScroll
+@onready var _quest_label: Label = $QuestScroll/QuestLabel
 
 ## 主操作按钮配色：按操作类型换色，玩家不看文字也知道会做什么。
 const ACTION_COLORS := {
@@ -48,6 +57,11 @@ var _panel: Node = null
 var _action_key := ""
 ## 各控件相对锚点的原始边距（来自 hud.tscn），安全区变化时以它为准重算，避免累加漂移。
 var _base_offsets: Dictionary = {}
+## 任务区当前尺寸（手工布局，直接缓存，避免读到上一帧的 size）。
+var _quest_area_size := Vector2.ZERO
+## 任务文本按当前宽度换行后的高度与行数（字体度量算出来，不等布局帧）。
+var _quest_needed_height := 0.0
+var _quest_line_count := 1
 ## 技能按钮（顺序与技能表一致，id 由表决定）。
 var _skill_buttons: Array[Control] = []
 
@@ -70,7 +84,7 @@ func _ready() -> void:
 	_build_skill_buttons()
 
 	for child: Node in get_children():
-		if child is Control:
+		if child is Control and not MANUAL_LAYOUT.has(String((child as Control).name)):
 			var control := child as Control
 			_base_offsets[control] = Vector4(
 				control.offset_left, control.offset_top, control.offset_right, control.offset_bottom)
@@ -123,6 +137,8 @@ func _apply_fonts() -> void:
 	_hp_label.add_theme_font_size_override("font_size", DisplayAdapter.text_px("body"))
 	_hint_label.add_theme_font_size_override("font_size", DisplayAdapter.text_px("helper"))
 	_quest_label.add_theme_font_size_override("font_size", DisplayAdapter.text_px("helper"))
+	_quest_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_update_quest_overflow()
 	_settings_button.font_size = DisplayAdapter.text_px("helper")
 	_settings_button.queue_redraw()
 	_mp_label.add_theme_font_size_override("font_size", DisplayAdapter.text_px("helper"))
@@ -158,6 +174,52 @@ func apply_safe_layout(insets: Vector4) -> void:
 		control.offset_right = base.z * own_scale + dx
 		control.offset_top = base.y * own_scale + dy
 		control.offset_bottom = base.w * own_scale + dy
+
+	_layout_quest_area(insets)
+
+
+## 任务区：左对齐、宽度 = 视口宽度 − 安全区 − 右侧按钮保留宽。
+## 文本过长时不再压缩整个高度，而是固定高度 + 纵向滚动（用户上下滑动查看全文）。
+func _layout_quest_area(insets: Vector4) -> void:
+	if not is_instance_valid(_quest_scroll):
+		return
+	var scale := DisplayAdapter.ui_scale
+	var viewport := get_viewport().get_visible_rect().size
+	var left := insets.x + 24.0 * scale
+	var top := insets.y + 12.0 * scale
+	var usable := viewport.x - insets.x - insets.z - left - QUEST_RIGHT_RESERVED * scale
+	var width := maxf(QUEST_MIN_WIDTH * scale, usable)
+	var height := QUEST_AREA_HEIGHT * scale
+	_quest_scroll.offset_left = left
+	_quest_scroll.offset_top = top
+	_quest_scroll.offset_right = left + width
+	_quest_scroll.offset_bottom = top + height
+	# 只改 offset 时 size 要到下一帧才更新，而换行判定当帧就要用，所以显式写一次。
+	_quest_scroll.size = Vector2(width, height)
+	_quest_area_size = Vector2(width, height)
+	# 文本宽度跟随容器，换行后高度由 Label 自己撑开，超出部分交给滚动。
+	_quest_label.custom_minimum_size = Vector2(width, 0.0)
+	_update_quest_overflow()
+
+
+## 内容超出可视高度才允许滑动：不超出时把触摸事件让回世界（避免顶部吃掉拖拽）。
+func _update_quest_overflow() -> void:
+	if not is_instance_valid(_quest_scroll) or not is_instance_valid(_quest_label):
+		return
+	# 用字体度量自己算换行高度：Label 的 size 要等布局帧才更新，当帧判定会不准。
+	var font := _quest_label.get_theme_font("font")
+	var font_size := _quest_label.get_theme_font_size("font_size")
+	var width := maxf(1.0, _quest_area_size.x)
+	var measured := font.get_multiline_string_size(_quest_label.text,
+			HORIZONTAL_ALIGNMENT_LEFT, width, font_size)
+	var line_height := maxf(1.0, font.get_height(font_size))
+	_quest_needed_height = measured.y
+	_quest_line_count = maxi(1, int(round(measured.y / line_height)))
+	var overflow := _quest_needed_height > _quest_area_size.y + 0.5
+	_quest_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO if overflow \
+			else ScrollContainer.SCROLL_MODE_DISABLED
+	_quest_scroll.mouse_filter = Control.MOUSE_FILTER_STOP if overflow \
+			else Control.MOUSE_FILTER_IGNORE
 
 
 ## 按锚点方向求位移：贴左边→+起始内缩，贴右边→-结束内缩，居中→按差值取半。
@@ -296,6 +358,33 @@ func button_icon(node_name: String) -> String:
 
 func press_quest_button() -> void:
 	_on_quest_pressed()
+
+
+func quest_area_width() -> float:
+	return _quest_area_size.x
+
+
+func quest_text() -> String:
+	return _quest_label.text
+
+
+func quest_alignment() -> int:
+	return _quest_label.horizontal_alignment
+
+
+## 内容超出时是否开启了纵向滚动（用户可上下滑动查看全文）。
+func quest_scroll_enabled() -> bool:
+	return _quest_scroll.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_AUTO
+
+
+func quest_line_count() -> int:
+	return _quest_line_count
+
+
+## 验收用：直接注入长文本，验证「过长 → 换行 → 可滚动」。
+func set_quest_text_for_test(text: String) -> void:
+	_quest_label.text = text
+	_update_quest_overflow()
 
 
 ## 当前打开的面板页签索引；没有面板返回 -1。

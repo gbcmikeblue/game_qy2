@@ -1081,7 +1081,38 @@ func _test_hud_status() -> void:
 		_check(game.hud.button_icon(node_name) == String(entry[1]),
 				"%s 的图标是 %s（实际 %s）" % [node_name, entry[1], game.hud.button_icon(node_name)])
 
-	# 3) 任务按钮是独立入口，直接落在任务页签
+	# 3) 任务区：左对齐 + 宽度按剩余空间自适应 + 过长可滚动
+	_check(game.hud.quest_alignment() == HORIZONTAL_ALIGNMENT_LEFT,
+			"任务文本左对齐（alignment=%d）" % game.hud.quest_alignment())
+	var width_base: float = game.hud.quest_area_width()
+	var viewport_width: float = get_viewport().get_visible_rect().size.x
+	_check(width_base > 0.0 and width_base < viewport_width * 0.9,
+			"任务区宽度按剩余空间计算（%.0f / 视口 %.0f）" % [width_base, viewport_width])
+
+	# 安全区左右变化 → 宽度跟着变（不是写死的像素）
+	game.hud.apply_safe_layout(Vector4(160.0, 12.0, 220.0, 24.0))
+	var width_narrow: float = game.hud.quest_area_width()
+	_check(width_narrow < width_base,
+			"安全区变大时任务区变窄（%.0f → %.0f）" % [width_base, width_narrow])
+	game.hud.apply_safe_layout(DisplayAdapter.safe_insets)
+
+	# 长文本：换行后行数增加，并开启纵向滚动
+	var long_text := ""
+	for i in 20:
+		long_text += "任务达成：猎狼 3/3（回去交付）（另有 2 个进行中） "
+	game.hud.set_quest_text_for_test(long_text)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check(game.hud.quest_line_count() > 2,
+			"长文本自动换行（%d 行）" % game.hud.quest_line_count())
+	_check(game.hud.quest_scroll_enabled(), "内容超出后可上下滑动查看")
+
+	# 短文本：不占用触摸，避免吃掉顶部拖拽
+	game.hud.set_quest_text_for_test("短")
+	await get_tree().process_frame
+	_check(not game.hud.quest_scroll_enabled(), "内容未超出时不拦截触摸")
+
+	# 4) 任务按钮是独立入口，直接落在任务页签
 	game.hud.press_quest_button()
 	await get_tree().process_frame
 	_check(game.hud.open_panel_tab() == 4,
