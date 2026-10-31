@@ -42,3 +42,14 @@ func reset_full() -> void:
 	hp = max_hp
 	is_dead = false
 	hp_changed.emit(hp, max_hp)
+
+
+## 上限变化（升级、装备 +HP 时调用）。
+## 上限增加时把同样的增量补到当前血量，避免「升级后血条反而变短」；
+## 上限减少（卸装）时只夹紧当前值，不额外扣血。
+func set_max_hp(new_max: int) -> void:
+	var clamped := maxi(1, new_max)
+	var delta := clamped - max_hp
+	max_hp = clamped
+	hp = clampi(hp + maxi(0, delta), 0, max_hp)
+	hp_changed.emit(hp, max_hp)

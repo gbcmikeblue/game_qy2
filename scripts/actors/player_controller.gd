@@ -34,6 +34,8 @@ const APPROACH_STALL_PROGRESS := 10.0
 var spawn_point := Vector2.ZERO
 
 var max_hp := 120
+## 魔法上限：阶段 C 只做属性预留，技能系统落地后才消耗（决策 N05）。
+var max_mp := 30
 var attack := 20.0
 var defense := 5.0
 var crit_rate := 0.1
@@ -100,13 +102,17 @@ func _ready() -> void:
 	_apply_def()
 	_health = get_node("Health") as HealthComponent
 	_visual = get_node("Visual") as Node2D
-	_health.setup(max_hp)
+	# 属性以 InventoryService.stats() 为准（基础值 + 等级成长 + 装备加成）。
+	_sync_stats_from_inventory()
+	_health.setup(int(max_hp))
 	_health.died.connect(_on_died)
 	_health.hp_changed.connect(_on_hp_changed)
 	EventBus.attack_requested.connect(_on_attack_requested)
 	EventBus.attack_pressed.connect(_on_attack_pressed)
 	EventBus.skill_requested.connect(_on_skill_requested)
 	EventBus.game_paused.connect(_on_game_paused)
+	EventBus.equipment_changed.connect(_on_stats_changed)
+	EventBus.level_changed.connect(_on_stats_changed)
 	GameSettings.combat_changed.connect(_apply_combat_settings)
 	_apply_combat_settings()
 
@@ -122,6 +128,10 @@ func _exit_tree() -> void:
 		EventBus.skill_requested.disconnect(_on_skill_requested)
 	if EventBus.game_paused.is_connected(_on_game_paused):
 		EventBus.game_paused.disconnect(_on_game_paused)
+	if EventBus.equipment_changed.is_connected(_on_stats_changed):
+		EventBus.equipment_changed.disconnect(_on_stats_changed)
+	if EventBus.level_changed.is_connected(_on_stats_changed):
+		EventBus.level_changed.disconnect(_on_stats_changed)
 	_set_locked_target(null)
 
 
@@ -611,6 +621,25 @@ func _display_name_of(enemy: EnemyController) -> String:
 	if not id.is_empty() and Locale.has_key(key):
 		return Locale.t(key)
 	return String(enemy.def.get("display_name", enemy.enemy_id))
+
+
+## 属性同步：基础值来自 player.json，等级成长与装备加成来自 InventoryService。
+## 生命上限变化交给 HealthComponent.set_max_hp（增量同时补当前血量）。
+func _sync_stats_from_inventory() -> void:
+	var s := InventoryService.stats()
+	attack = float(s.get("attack", attack))
+	defense = float(s.get("defense", defense))
+	crit_rate = float(s.get("crit_rate", crit_rate))
+	crit_damage = float(s.get("crit_damage", crit_damage))
+	max_hp = int(s.get("max_hp", max_hp))
+	max_mp = int(s.get("max_mp", max_mp))
+	if _health != null:
+		_health.set_max_hp(max_hp)
+
+
+## 装备或等级变化后重算属性；默认参数让两个信号（2 参数）都能直接连过来。
+func _on_stats_changed(_arg1: Variant = null, _arg2: Variant = null) -> void:
+	_sync_stats_from_inventory()
 
 
 func _apply_def() -> void:

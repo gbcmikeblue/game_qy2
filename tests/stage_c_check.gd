@@ -8,6 +8,7 @@ extends Node
 const ITEMS_DIR := "res://data/items/items"
 const LOOT_DIR := "res://data/items/loot"
 const LOOT_SERVICE := preload("res://scripts/items/loot_service.gd")
+const PLAYER_SCENE := preload("res://scenes/actors/player/player.tscn")
 
 var _failures: Array[String] = []
 
@@ -43,6 +44,7 @@ func _ready() -> void:
 	_test_loot_chance()
 	_test_loot_guaranteed()
 	await _test_kill_to_inventory()
+	await _test_equipment_affects_player()
 	InventoryService.reset()
 	_report()
 
@@ -311,6 +313,61 @@ func _test_kill_to_inventory() -> void:
 	service.queue_free()
 	root.queue_free()
 	dummy.queue_free()
+
+
+# ---------------- 21. 接线：装备与等级真正影响战斗 ----------------
+
+func _test_equipment_affects_player() -> void:
+	InventoryService.reset()
+	InventoryService.add_item(&"wep_rusty_sword", 1)
+	InventoryService.add_item(&"arm_leather", 1)
+
+	var hero = PLAYER_SCENE.instantiate()
+	add_child(hero)
+	await get_tree().process_frame
+
+	var base_attack: float = hero.attack
+	var base_max_hp: int = hero.get_max_hp()
+	_check(is_equal_approx(base_attack, float(InventoryService.stats()["attack"])),
+			"玩家初始攻击取自已结算属性（%.1f）" % base_attack)
+
+	# 1) 装备武器 → 攻击 +4，且伤害真的按新攻击算
+	InventoryService.equip(&"wep_rusty_sword")
+	_check(is_equal_approx(hero.attack - base_attack, 4.0),
+			"装备武器后玩家攻击 +4（%.1f → %.1f）" % [base_attack, hero.attack])
+
+	var dummy := DummyTarget.new()
+	add_child(dummy)
+	dummy.global_position = hero.global_position
+	var expected := maxi(1, int(round(hero.attack - dummy.get_defense())))
+	var hit := CombatService.strike(hero, dummy, {"attack": hero.attack, "max_range": 999.0})
+	_check(int(hit["damage"]) == expected,
+			"伤害按装备后的攻击结算（实际 %d，期望 %d）" % [int(hit["damage"]), expected])
+	dummy.queue_free()
+
+	# 2) 装备 +HP 的护甲 → 上限 +10，当前血量同步补齐（决策 D2）
+	InventoryService.equip(&"arm_leather")
+	_check(hero.get_max_hp() == base_max_hp + 10,
+			"装备 +HP 后生命上限 +10（%d → %d）" % [base_max_hp, hero.get_max_hp()])
+	_check(hero.get_hp() == hero.get_max_hp(),
+			"上限增加时当前血量同步补齐（%d/%d）" % [hero.get_hp(), hero.get_max_hp()])
+
+	# 3) 升级 → 上限再 +8
+	var ups := InventoryService.gain_exp(InventoryService.exp_to_next())
+	_check(ups == 1, "升到 2 级")
+	_check(hero.get_max_hp() == base_max_hp + 10 + 8,
+			"升级后生命上限再 +8（当前 %d）" % hero.get_max_hp())
+	_check(hero.get_hp() == hero.get_max_hp(), "升级同样补齐当前血量")
+
+	# 4) 卸装 → 上限回落，当前血量被夹紧而不是变成负数/溢出
+	InventoryService.unequip("armor")
+	_check(hero.get_max_hp() == base_max_hp + 8, "卸下护甲后上限回落 10")
+	_check(hero.get_hp() <= hero.get_max_hp(), "上限回落后当前血量被夹紧（%d/%d）"
+			% [hero.get_hp(), hero.get_max_hp()])
+
+	remove_child(hero)
+	hero.queue_free()
+	InventoryService.reset()
 
 
 func _make_entry(item_id: StringName, chance: float, low: int, high: int) -> LootEntry:
