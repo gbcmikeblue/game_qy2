@@ -23,6 +23,12 @@ const ROW_HEIGHT := 52.0
 const SHOP_ROW_HEIGHT := 44.0
 ## 与 SaveService.SLOT_COUNT 保持一致（面板只做展示，槽位数量由服务层决定）。
 const SAVE_SLOT_ROWS := 3
+## 页签：顺序即索引，文案 key 与 _tab_buttons()/_tab_pages() 一一对应。
+const TAB_KEYS := ["inv.tab.bag", "inv.tab.equip", "inv.tab.shop", "inv.tab.save", "inv.tab.quest"]
+## 敌人名称 key 前缀：拼出来而不是写成模板串，否则 i18n 验收会把 "enemy.%s" 当成缺失词条。
+const ENEMY_KEY_PREFIX := "enemy."
+const TAB_WIDTH := 128.0
+const TAB_GAP := 8.0
 const ROW_WIDTH := 660.0
 const ICON_SIZE := 34.0
 ## 槽位文案 key 前缀：用拼接而不是模板串，否则 i18n 验收会把 "inv.slot.%s" 当成缺失词条。
@@ -40,6 +46,7 @@ var _bag_tab: UiButton
 var _equip_tab: UiButton
 var _shop_tab: UiButton
 var _save_tab: UiButton
+var _quest_tab: UiButton
 var _content: Control
 var _bag_page: Control
 var _equip_page: Control
@@ -56,6 +63,9 @@ var _sell_rows: Control
 var _buy_header: Label
 var _sell_header: Label
 var _save_page: Control
+var _quest_page: Control
+## 任务页每行的标签（重建时清空；验收按行读文案）。
+var _quest_lines: Array[Label] = []
 ## 每个槽位一行的信息标签（读档/存档后刷新文本与按钮可用性）。
 var _save_info: Array[Label] = []
 var _save_load_buttons: Array[UiButton] = []
@@ -94,6 +104,10 @@ func _exit_tree() -> void:
 		EventBus.equipment_changed.disconnect(_on_equipment_changed)
 	if EventBus.gold_changed.is_connected(_on_gold_changed):
 		EventBus.gold_changed.disconnect(_on_gold_changed)
+	if EventBus.quest_updated.is_connected(_on_quest_changed):
+		EventBus.quest_updated.disconnect(_on_quest_changed)
+	if EventBus.quest_completed.is_connected(_on_quest_completed):
+		EventBus.quest_completed.disconnect(_on_quest_completed)
 	_resume_game()
 
 
@@ -103,6 +117,8 @@ func _locale_and_signals() -> void:
 	EventBus.inventory_changed.connect(_on_inventory_changed)
 	EventBus.equipment_changed.connect(_on_equipment_changed)
 	EventBus.gold_changed.connect(_on_gold_changed)
+	EventBus.quest_updated.connect(_on_quest_changed)
+	EventBus.quest_completed.connect(_on_quest_completed)
 
 
 # ---------------- 构建 ----------------
@@ -123,14 +139,12 @@ func _build() -> void:
 
 	_title = _label(Vector2(24.0, 10.0), Vector2(400.0, 42.0), FONT_TITLE, _panel)
 
-	_bag_tab = _button(_panel, Vector2(24.0, 62.0), Vector2(150.0, 40.0))
-	_bag_tab.pressed.connect(_switch_tab.bind(0))
-	_equip_tab = _button(_panel, Vector2(182.0, 62.0), Vector2(150.0, 40.0))
-	_equip_tab.pressed.connect(_switch_tab.bind(1))
-	_shop_tab = _button(_panel, Vector2(340.0, 62.0), Vector2(150.0, 40.0))
-	_shop_tab.pressed.connect(_switch_tab.bind(2))
-	_save_tab = _button(_panel, Vector2(498.0, 62.0), Vector2(150.0, 40.0))
-	_save_tab.pressed.connect(_switch_tab.bind(3))
+	# 5 个页签均分：24 起、宽 128、间距 8，正好落到 696（面板宽 720，右侧留 24）。
+	_bag_tab = _make_tab(0)
+	_equip_tab = _make_tab(1)
+	_shop_tab = _make_tab(2)
+	_save_tab = _make_tab(3)
+	_quest_tab = _make_tab(4)
 
 	_content = Control.new()
 	_content.position = CONTENT_RECT.position
@@ -142,6 +156,7 @@ func _build() -> void:
 	_build_equip_page()
 	_build_shop_page()
 	_build_save_page()
+	_build_quest_page()
 
 	_gold_label = _label(Vector2(24.0, 440.0), Vector2(190.0, 34.0), FONT_BODY, _panel)
 	_capacity_label = _label(Vector2(220.0, 440.0), Vector2(220.0, 34.0), FONT_BODY, _panel)
@@ -201,6 +216,90 @@ func _build_save_page() -> void:
 	_save_page.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_save_page.visible = false
 	_content.add_child(_save_page)
+
+
+## 任务页签：当前任务（标题/进度/奖励）+ 已完成清单。
+## 只读展示，不提供接取/放弃——任务由 QuestService 自动串行推进。
+func _build_quest_page() -> void:
+	_quest_page = Control.new()
+	_quest_page.size = CONTENT_RECT.size
+	_quest_page.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_quest_page.visible = false
+	_content.add_child(_quest_page)
+
+
+func _rebuild_quest() -> void:
+	for child: Node in _quest_page.get_children():
+		_quest_page.remove_child(child)
+		child.queue_free()
+	_quest_lines.clear()
+
+	var row := 0
+	var quest := QuestService.current_quest()
+	if quest.is_empty():
+		row = _add_quest_line(row, Locale.t("quest.none"))
+	else:
+		row = _add_quest_line(row, Locale.t("quest.line.current", [
+			Locale.t(String(quest.get("title_key", "quest.unknown.title"))),
+			QuestService.current_progress(),
+			QuestService.current_required(),
+		]))
+		row = _add_quest_line(row, Locale.t("quest.line.reward", [
+			int(quest.get("reward_gold", 0)), _reward_items_text(quest)]))
+		row = _add_quest_line(row, Locale.t("quest.line.hint",
+				[Locale.t(ENEMY_KEY_PREFIX + String(quest.get("target", "")))]))
+
+	row += 1   # 空一行，把「已完成」与当前任务分开
+	row = _add_quest_line(row, Locale.t("quest.completed_title"))
+	var completed := _completed_quests()
+	if completed.is_empty():
+		row = _add_quest_line(row, Locale.t("quest.completed.none"))
+	else:
+		for title: String in completed:
+			row = _add_quest_line(row, "· " + title)
+
+
+func _reward_items_text(quest: Dictionary) -> String:
+	var parts: Array[String] = []
+	for entry: Variant in quest.get("reward_items", []):
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var item_id := StringName(String((entry as Dictionary).get("id", "")))
+		var def := ItemRegistry.get_item(item_id)
+		if def == null:
+			continue
+		parts.append(Locale.t("quest.reward.item", [Locale.t(def.name_key),
+			int((entry as Dictionary).get("qty", 1))]))
+	if parts.is_empty():
+		return Locale.t("quest.reward.none")
+	return "、".join(parts)
+
+
+## 已完成的任务标题（按数据顺序，保证文案稳定）。
+func _completed_quests() -> Array[String]:
+	var out: Array[String] = []
+	for entry: Variant in DataRegistry.get_quests():
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var quest := entry as Dictionary
+		var quest_id := String(quest.get("id", ""))
+		if quest_id.is_empty() or not QuestService.completed.has(quest_id):
+			continue
+		out.append(Locale.t(String(quest.get("title_key", "quest.unknown.title"))))
+	return out
+
+
+func _add_quest_line(row: int, text: String) -> int:
+	_quest_lines.append(_quest_label(row, text))
+	return row + 1
+
+
+## 行距固定 26px，row 直接决定纵坐标。
+func _quest_label(slot: int, text: String) -> Label:
+	var y := float(slot) * 26.0
+	var label := _label(Vector2(8.0, y), Vector2(660.0, 26.0), FONT_HELPER, _quest_page)
+	label.text = text
+	return label
 
 
 func _rebuild_save() -> void:
@@ -305,17 +404,29 @@ func _layout() -> void:
 
 func _refresh_texts() -> void:
 	_title.text = Locale.t("inv.title")
-	_bag_tab.set_caption(Locale.t("inv.tab.bag"))
-	_equip_tab.set_caption(Locale.t("inv.tab.equip"))
-	_shop_tab.set_caption(Locale.t("inv.tab.shop"))
-	_save_tab.set_caption(Locale.t("inv.tab.save"))
+	var tabs := _tab_buttons()
+	for index in tabs.size():
+		tabs[index].set_caption(Locale.t(TAB_KEYS[index]))
+		tabs[index].set_highlight(_tab == index)
 	_close_button.set_caption(Locale.t("inv.close"))
 	_buy_header.text = Locale.t("inv.shop.buy")
 	_sell_header.text = Locale.t("inv.shop.sell")
-	_bag_tab.set_highlight(_tab == 0)
-	_equip_tab.set_highlight(_tab == 1)
-	_shop_tab.set_highlight(_tab == 2)
-	_save_tab.set_highlight(_tab == 3)
+
+
+func _tab_buttons() -> Array[UiButton]:
+	return [_bag_tab, _equip_tab, _shop_tab, _save_tab, _quest_tab]
+
+
+func _tab_pages() -> Array[Control]:
+	return [_bag_page, _equip_page, _shop_page, _save_page, _quest_page]
+
+
+## 按索引建一个页签按钮（位置见 TAB_KEYS 注释）。
+func _make_tab(index: int) -> UiButton:
+	var button := _button(_panel, Vector2(24.0 + float(index) * (TAB_WIDTH + TAB_GAP), 62.0),
+			Vector2(TAB_WIDTH, 40.0))
+	button.pressed.connect(_switch_tab.bind(index))
+	return button
 
 
 func _refresh_all() -> void:
@@ -324,6 +435,7 @@ func _refresh_all() -> void:
 	_rebuild_equip()
 	_rebuild_shop()
 	_rebuild_save()
+	_rebuild_quest()
 	_refresh_footer()
 
 
@@ -561,11 +673,12 @@ func _on_sell_pressed(item_id: StringName) -> void:
 # ---------------- 交互与生命周期 ----------------
 
 func _switch_tab(index: int) -> void:
+	if index < 0 or index >= TAB_KEYS.size():
+		return
 	_tab = index
-	_bag_page.visible = index == 0
-	_equip_page.visible = index == 1
-	_shop_page.visible = index == 2
-	_save_page.visible = index == 3
+	var pages := _tab_pages()
+	for i in pages.size():
+		pages[i].visible = i == index
 	_refresh_texts()
 
 
@@ -596,6 +709,14 @@ func _on_inventory_changed() -> void:
 
 func _on_equipment_changed(_slot: String, _item_id: String) -> void:
 	_rebuild_equip()
+
+
+func _on_quest_changed(_quest_id: String, _current: int, _required: int) -> void:
+	_rebuild_quest()
+
+
+func _on_quest_completed(_quest_id: String) -> void:
+	_rebuild_quest()
 
 
 func _on_gold_changed(_gold: int) -> void:
@@ -711,6 +832,16 @@ func sell_row_item_id(index: int) -> StringName:
 	if index < 0 or index >= _sell_items.size():
 		return &""
 	return _sell_items[index]
+
+
+func quest_line_count() -> int:
+	return _quest_lines.size()
+
+
+func quest_line(index: int) -> String:
+	if index < 0 or index >= _quest_lines.size():
+		return ""
+	return _quest_lines[index].text
 
 
 func save_row_count() -> int:

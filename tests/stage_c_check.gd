@@ -59,6 +59,7 @@ func _ready() -> void:
 	await _test_portals()
 	await _test_npc()
 	await _test_quests()
+	await _test_quest_panel()
 	SaveService.autosave_enabled = true
 	InventoryService.reset()
 	_report()
@@ -886,6 +887,44 @@ func _test_quests() -> void:
 	SaveService.delete_slot(2)
 	QuestService.reset()
 	InventoryService.reset()
+
+
+# ---------------- 任务面板：当前任务 / 奖励 / 完成清单 ----------------
+
+func _test_quest_panel() -> void:
+	# 断言依赖中文文案，先固定语言，避免受用户偏好/前序用例影响。
+	var original_lang: String = Locale.current
+	Locale.set_language("zh")
+	QuestService.reset()
+	InventoryService.reset()
+	var panel = INVENTORY_PANEL.instantiate()
+	add_child(panel)
+	await get_tree().process_frame
+
+	panel.switch_tab_to(4)
+	_check(panel.current_tab() == 4, "可以切到任务页签")
+	_check(panel.quest_line_count() >= 3, "任务页至少 3 行（%d）" % panel.quest_line_count())
+	_check(panel.quest_line(0).contains("猎狼"),
+			"首行显示当前任务标题（%s）" % panel.quest_line(0))
+	_check(panel.quest_line(1).contains("50"),
+			"第二行显示金币奖励（%s）" % panel.quest_line(1))
+
+	# 打满第一条任务 → 当前任务切到下一条，已完成清单出现「猎狼」
+	for i in 3:
+		EventBus.enemy_defeated.emit("forest_wolf", Vector2.ZERO)
+	_check(panel.quest_line(0).contains("野猪"),
+			"完成后当前任务切到下一条（%s）" % panel.quest_line(0))
+
+	var joined := ""
+	for i in panel.quest_line_count():
+		joined += panel.quest_line(i) + "|"
+	_check(joined.contains("猎狼"), "已完成清单里出现猎狼（%s）" % joined)
+
+	panel.close_panel()
+	await get_tree().process_frame
+	QuestService.reset()
+	InventoryService.reset()
+	Locale.set_language(original_lang)
 
 
 func _make_entry(item_id: StringName, chance: float, low: int, high: int) -> LootEntry:
