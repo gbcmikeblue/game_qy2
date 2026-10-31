@@ -256,7 +256,9 @@ func _pick_patrol_point() -> void:
 
 
 func _follow_target(delta: float) -> void:
-	var target := GameManager.player
+	var target := _get_target()
+	if target == null:
+		return
 	_path_timer -= delta
 	if _path_timer <= 0.0 or _path.is_empty() or _path_anchor.distance_to(target.global_position) > PATH_REFRESH_DISTANCE:
 		_path_timer = PATH_REFRESH_INTERVAL
@@ -294,15 +296,15 @@ func _move_towards(goal: Vector2, speed: float, delta: float) -> void:
 
 
 func _deal_damage() -> void:
-	var target := GameManager.player
-	if target == null or not is_instance_valid(target):
+	var target := _get_target()
+	if target == null:
 		return
-	if global_position.distance_to(target.global_position) > attack_range * 1.25:
-		return
-	if not target.has_method("take_damage") or not target.is_alive():
-		return
-	var result := CombatMath.compute_damage(attack, 1.0, target.get_defense(), 0.0, 1.0, null)
-	target.take_damage(int(result["damage"]), self)
+	# 命中/距离/暴击/被拒绝全部交给 CombatService，与玩家共用同一套规则。
+	CombatService.strike(self, target, {
+		"attack": attack,
+		"max_range": attack_range,
+		"range_tolerance": 1.25,
+	})
 
 
 func _find_target() -> bool:
@@ -314,15 +316,20 @@ func _find_target() -> bool:
 	return true
 
 
+## 目标玩家统一从 GameManager 查询：联机时替换查询实现即可，AI 逻辑不用动。
+func _get_target() -> Node2D:
+	return GameManager.get_player()
+
+
 func _is_target_valid() -> bool:
-	var target := GameManager.player
+	var target := _get_target()
 	if target == null or not is_instance_valid(target):
 		return false
 	return target.is_alive()
 
 
 func _distance_to_target() -> float:
-	var target := GameManager.player
+	var target := _get_target()
 	if target == null or not is_instance_valid(target):
 		return INF
 	return global_position.distance_to(target.global_position)

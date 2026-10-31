@@ -5,6 +5,26 @@
 
 const MAIN_SCENE := preload("res://scenes/boot/main.tscn")
 
+
+## 结算测试用的哑实体：只需要位置、生命与防御，不依赖场景树里的真实角色。
+class DummyActor extends Node2D:
+	var hp := 100
+	var defense := 5.0
+	## 模拟无敌帧/已死亡：拒绝这次伤害。
+	var reject := false
+
+	func take_damage(amount: int, _source: Node = null) -> bool:
+		if reject or hp <= 0:
+			return false
+		hp = maxi(0, hp - amount)
+		return true
+
+	func is_alive() -> bool:
+		return hp > 0
+
+	func get_defense() -> float:
+		return defense
+
 var _failures: Array[String] = []
 var _main
 var _map
@@ -27,6 +47,7 @@ func _ready() -> void:
 	await get_tree().physics_frame
 
 	_test_combat_math()
+	_test_combat_service()
 	_test_health_component()
 	_test_pathfinding()
 	await _test_fsm()
@@ -102,6 +123,46 @@ func _test_combat_math() -> void:
 	var crit := CombatMath.compute_damage(20.0, 1.0, 5.0, 1.0, 2.0, rng)
 	_check(bool(crit["is_crit"]) and int(crit["damage"]) == 30,
 			"必暴击时按 crit_damage 放大（实际 %d）" % int(crit["damage"]))
+
+
+## CombatService 是玩家与敌人共用的结算入口：这里只验「拒绝路径」与「正常路径」。
+func _test_combat_service() -> void:
+	var attacker := DummyActor.new()
+	var target := DummyActor.new()
+	add_child(attacker)
+	add_child(target)
+	attacker.global_position = Vector2.ZERO
+	target.global_position = Vector2(200.0, 0.0)
+
+	var far := CombatService.strike(attacker, target, {"attack": 20.0, "max_range": 50.0})
+	_check(not bool(far["hit"]) and String(far["reason"]) == "out_of_range",
+			"CombatService：超出射程不结算（%s）" % String(far["reason"]))
+
+	var no_target := CombatService.strike(attacker, null, {"attack": 20.0})
+	_check(not bool(no_target["hit"]) and String(no_target["reason"]) == "no_target",
+			"CombatService：无目标不结算（%s）" % String(no_target["reason"]))
+
+	var hit := CombatService.strike(attacker, target, {"attack": 20.0, "max_range": 300.0})
+	_check(bool(hit["hit"]) and int(hit["damage"]) == 15 and target.hp == 85,
+			"CombatService：20 攻 - 5 防 = 15，目标 100→85（实际伤害 %d、血量 %d）"
+					% [int(hit["damage"]), target.hp])
+
+	var blocked := DummyActor.new()
+	add_child(blocked)
+	blocked.global_position = Vector2.ZERO
+	blocked.reject = true
+	var rejected := CombatService.strike(attacker, blocked, {"attack": 20.0})
+	_check(not bool(rejected["hit"]) and String(rejected["reason"]) == "rejected",
+			"CombatService：目标拒绝（无敌帧）时不计命中（%s）" % String(rejected["reason"]))
+
+	blocked.hp = 0
+	var dead := CombatService.strike(attacker, blocked, {"attack": 20.0})
+	_check(not bool(dead["hit"]) and String(dead["reason"]) == "target_dead",
+			"CombatService：目标已死亡不结算（%s）" % String(dead["reason"]))
+
+	attacker.queue_free()
+	target.queue_free()
+	blocked.queue_free()
 
 
 func _test_health_component() -> void:

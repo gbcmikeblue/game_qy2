@@ -14,8 +14,19 @@ const PAUSE_BACKGROUND := "background"
 const PAUSE_MANUAL := "manual"
 
 var player: Node2D = null
+## 目标玩家查询入口：单机返回 player；接权威服务器后换成「按会话下发实体」，
+## 调用方（敌人 AI 等）不需要改代码。为空的 Callable 表示用单机默认值。
+var player_provider: Callable = Callable()
 ## 派生状态：等价于「原因集合非空」。对外只读，改动请走 hold_pause/release_pause。
 var is_paused := false
+
+
+## 查询当前玩家。所有「谁是我的目标」都应走这里，而不是直接读 player 字段。
+func get_player() -> Node2D:
+	if player_provider.is_valid():
+		var resolved: Variant = player_provider.call()
+		return resolved as Node2D
+	return player
 
 var _reasons: Dictionary = {}
 

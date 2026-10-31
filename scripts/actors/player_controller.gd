@@ -301,12 +301,16 @@ func try_attack() -> int:
 
 
 func _resolve_attack(target: EnemyController) -> int:
-	var result := CombatMath.compute_damage(attack, 1.0, target.defense, crit_rate, crit_damage, _rng)
-	var damage := int(result["damage"])
-	if not target.take_damage(damage, self):
-		return 0
-	CombatFx.show_damage(target.global_position, damage, bool(result["is_crit"]))
-	return 1
+	# 控制器只负责「发起」；命中、暴击、伤害与飘字统一由 CombatService 结算。
+	var result := CombatService.strike(self, target, {
+		"attack": attack,
+		"crit_rate": crit_rate,
+		"crit_damage": crit_damage,
+		"rng": _rng,
+		"max_range": attack_range,
+		"show_damage_fx": true,
+	})
+	return 1 if bool(result["hit"]) else 0
 
 
 func take_damage(amount: int, source: Node = null) -> void:
