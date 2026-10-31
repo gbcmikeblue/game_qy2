@@ -124,6 +124,8 @@
   "button.inventory": "背包",
   "button.skill": "技能",
   "button.skill.heavy": "重击",
+  "skill.heavy.name": "重击",
+  "skill.whirlwind.name": "旋风斩",
   "button.skill.whirlwind": "旋风",
   "skill.no_target": "附近没有敌人",
   "skill.whirlwind_hits": "旋风斩 %d 连击",

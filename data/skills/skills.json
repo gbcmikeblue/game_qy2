@@ -1,0 +1,26 @@
+{
+  "_comment": "技能表：id 为唯一键；targeting=locked 需锁定目标，targeting=area 按半径结算（不需锁定）。button_key 是 HUD 按钮文案，name_key 供面板/飘字使用。顺序即 HUD 按钮顺序。",
+  "skills": [
+    {
+      "id": "heavy_strike",
+      "name_key": "skill.heavy.name",
+      "button_key": "button.skill.heavy",
+      "targeting": "locked",
+      "mp_cost": 10,
+      "cooldown": 3.0,
+      "damage_multiplier": 2.2,
+      "range_multiplier": 1.25
+    },
+    {
+      "id": "whirlwind",
+      "name_key": "skill.whirlwind.name",
+      "button_key": "button.skill.whirlwind",
+      "targeting": "area",
+      "mp_cost": 15,
+      "cooldown": 6.0,
+      "damage_multiplier": 1.4,
+      "radius": 84.0,
+      "hits_key": "skill.whirlwind_hits"
+    }
+  ]
+}

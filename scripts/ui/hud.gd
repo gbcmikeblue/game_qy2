@@ -32,6 +32,8 @@ var _panel: Node = null
 var _action_key := ""
 ## 各控件相对锚点的原始边距（来自 hud.tscn），安全区变化时以它为准重算，避免累加漂移。
 var _base_offsets: Dictionary = {}
+## 技能按钮（顺序与技能表一致，id 由表决定）。
+var _skill_buttons: Array[Control] = []
 
 
 func _ready() -> void:
@@ -46,6 +48,10 @@ func _ready() -> void:
 	_debug_label.clip_text = true
 	# 发布构建不显示调试信息（FPS/坐标/状态），只在调试构建里给开发者看。
 	_debug_label.visible = OS.is_debug_build()
+
+	# 技能按钮按技能表生成（场景里预留 2 个槽位，超出的动态创建），
+	# 必须在下面记录基准边距之前完成，否则安全区重算会漏掉新按钮。
+	_build_skill_buttons()
 
 	for child: Node in get_children():
 		if child is Control:
@@ -149,12 +155,57 @@ func _axis_shift(start_anchor: float, end_anchor: float,
 
 ## 暂停门控（§3.7）：暂停/切后台时主操作按钮置灰且不响应，避免暂停态下误触攻击。
 ## 切后台的暂停由 GameManager 负责，HUD 只消费状态。
+## 当前技能按钮数量（验收用：应与技能表条数一致）。
+func skill_button_count() -> int:
+	return _skill_buttons.size()
+
+
+## 技能按钮与技能表一一对应：表里加一条，HUD 就多一个按钮（场景预留 2 个槽位）。
+func _build_skill_buttons() -> void:
+	_skill_buttons.clear()
+	var pooled: Array[Control] = [_skill_button, _skill2_button]
+	var defs := DataRegistry.get_skills()
+	for index in defs.size():
+		var def: Dictionary = defs[index]
+		var button: Control
+		if index < pooled.size():
+			button = pooled[index]
+		else:
+			button = _make_extra_skill_button(index)
+		button.skill_id = String(def.get("id", ""))
+		button.visible = true
+		_skill_buttons.append(button)
+	# 表里的技能比槽位少时，多余的槽位隐藏（不留空白热区）。
+	for index in range(defs.size(), pooled.size()):
+		pooled[index].visible = false
+
+
+## 超出场景预留槽位时创建新按钮：沿用同样的尺寸，继续往左排。
+func _make_extra_skill_button(index: int) -> Control:
+	var button := Control.new()
+	button.set_script(load("res://scripts/ui/touch_button.gd"))
+	button.anchor_left = 1.0
+	button.anchor_top = 1.0
+	button.anchor_right = 1.0
+	button.anchor_bottom = 1.0
+	var left := -344.0 - float(maxi(0, index - 1)) * 136.0
+	button.offset_left = left
+	button.offset_top = -330.0
+	button.offset_right = left + 136.0
+	button.offset_bottom = -194.0
+	button.mouse_filter = Control.MOUSE_FILTER_STOP
+	button.action = "skill"
+	button.radius = 48.0
+	add_child(button)
+	return button
+
+
 func _update_skill_button() -> void:
 	var player := GameManager.player
 	if not is_instance_valid(player) or not player.has_method("get_skill_cooldown_left"):
 		return
-	_skill_button.set_cooldown(_cooldown_ratio_of(player, "heavy_strike"))
-	_skill2_button.set_cooldown(_cooldown_ratio_of(player, "whirlwind"))
+	for button: Control in _skill_buttons:
+		button.set_cooldown(_cooldown_ratio_of(player, button.skill_id))
 
 
 ## 单个技能的冷却比例（0..1），两个技能按钮共用。
@@ -165,9 +216,8 @@ func _cooldown_ratio_of(player: Node, skill_id: String) -> float:
 
 func _update_interaction_gate() -> void:
 	_attack_button.set_disabled(GameManager.is_paused)
-	if _skill_button != null:
-		_skill_button.set_disabled(GameManager.is_paused)
-		_skill2_button.set_disabled(GameManager.is_paused)
+	for button: Control in _skill_buttons:
+		button.set_disabled(GameManager.is_paused)
 
 
 func _process(_delta: float) -> void:
@@ -186,8 +236,9 @@ func _on_texts_changed(_arg: Variant = null) -> void:
 func _refresh_texts() -> void:
 	_settings_button.set_caption(Locale.t("button.settings"))
 	_inventory_button.set_caption(Locale.t("button.inventory"))
-	_skill_button.set_caption(Locale.t("button.skill.heavy"))
-	_skill2_button.set_caption(Locale.t("button.skill.whirlwind"))
+	for button: Control in _skill_buttons:
+		var def := DataRegistry.get_skill(button.skill_id)
+		button.set_caption(Locale.t(String(def.get("button_key", "button.skill"))))
 	_update_action_button()
 	_update_hint()
 

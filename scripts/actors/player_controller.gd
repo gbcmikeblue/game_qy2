@@ -39,20 +39,16 @@ var spawn_point := Vector2.ZERO
 var max_hp := 120
 ## 魔法上限：阶段 C 只做属性预留，技能系统落地后才消耗（决策 N05）。
 var max_mp := 30
-## 当前魔法值与技能参数（数值在 player.json）。技能是 Q12 的 B 阶段首个主动技能。
+## 当前魔法值与回复速度（数值在 player.json）。技能参数不在这里——见 data/skills/skills.json。
 var mp := 30
 var mp_regen := 2.0
-var skill_mp_cost := 10
-var skill_cooldown := 3.0
-var skill_multiplier := 2.2
-var _skill_cd_left := 0.0
-## 旋风斩（AoE）参数与独立冷却。
-var whirlwind_mp_cost := 15
-var whirlwind_cooldown := 6.0
-var whirlwind_multiplier := 1.4
-var whirlwind_radius := 84.0
-var _whirlwind_cd_left := 0.0
+## 技能冷却表：skill_id -> 剩余秒数。参数（耗蓝/冷却/倍率/范围）全部来自技能表。
+var _skill_cd: Dictionary = {}
 var _mp_frac := 0.0
+## 技能飘字配色（三种状态一眼可分）。
+const COLOR_COOLING := Color(0.75, 0.75, 0.85)
+const COLOR_NO_MP := Color(0.55, 0.65, 0.95)
+const COLOR_HIT := Color(1.0, 0.85, 0.55)
 var attack := 20.0
 var defense := 5.0
 var crit_rate := 0.1
@@ -224,88 +220,69 @@ func get_mp() -> int:
 	return mp
 
 
-func get_skill_cooldown_left(skill_id: String = "heavy_strike") -> float:
-	if skill_id == "whirlwind":
-		return _whirlwind_cd_left
-	return _skill_cd_left
+## 技能定义（来自 data/skills/skills.json）；id 为空时取表里第一条。
+func get_skill_def(skill_id: String = "") -> Dictionary:
+	if skill_id.is_empty():
+		return DataRegistry.get_skill(DataRegistry.default_skill_id())
+	return DataRegistry.get_skill(skill_id)
+
+
+func get_skill_cooldown_left(skill_id: String = "") -> float:
+	var def := get_skill_def(skill_id)
+	if def.is_empty():
+		return 0.0
+	return float(_skill_cd.get(String(def["id"]), 0.0))
 
 
 ## 冷却总时长（HUD 用来算环形比例）。
-func get_skill_cooldown_total(skill_id: String = "heavy_strike") -> float:
-	if skill_id == "whirlwind":
-		return whirlwind_cooldown
-	return skill_cooldown
+func get_skill_cooldown_total(skill_id: String = "") -> float:
+	return float(get_skill_def(skill_id).get("cooldown", 0.0))
 
 
-## 技能入口：按 id 分发。UI 通过 skill_requested(skill_id) 传入，默认重击。
-func try_skill(skill_id: String = "heavy_strike") -> int:
-	if skill_id == "whirlwind":
-		return _try_whirlwind()
-	return _try_heavy_strike()
+## 技能入口：参数全部查表，这里只做「能不能放」与「怎么结算」。
+## targeting=locked 需要锁定目标并判距离；targeting=area 按半径取全部敌人。
+## 所有失败路径都在扣蓝/进冷却之前返回，保证「没打中不消耗」。
+func try_skill(skill_id: String = "") -> int:
+	var def := get_skill_def(skill_id)
+	if def.is_empty() or _dead:
+		return 0
+	var id := String(def["id"])
 
-
-## 主动技能：重击（单体，需锁定目标）。消耗 MP、有冷却，伤害为普攻的 multiplier 倍。
-## 冷却与 MP 的判定放在真正结算之前，失败不扣蓝也不进冷却。
-func _try_heavy_strike() -> int:
-	if _dead or not _has_valid_lock():
+	if get_skill_cooldown_left(id) > 0.0:
+		_skill_hint("skill.cooling", COLOR_COOLING)
 		return 0
-	var target := _locked
-	if not is_instance_valid(target) or not target.is_alive():
-		return 0
-	if _skill_cd_left > 0.0:
-		CombatFx.show_text(global_position + Vector2(0.0, -44.0), Locale.t("skill.cooling"),
-				Color(0.75, 0.75, 0.85))
-		return 0
-	if mp < skill_mp_cost:
-		CombatFx.show_text(global_position + Vector2(0.0, -44.0), Locale.t("skill.no_mp"),
-				Color(0.55, 0.65, 0.95))
-		return 0
-	if global_position.distance_to(target.global_position) > attack_range * 1.25:
+	var cost := int(def.get("mp_cost", 0))
+	if mp < cost:
+		_skill_hint("skill.no_mp", COLOR_NO_MP)
 		return 0
 
-	var result := CombatService.strike(self, target, {
-		"attack": attack * skill_multiplier,
-		"crit_rate": crit_rate,
-		"crit_damage": crit_damage,
-		"rng": _rng,
-		"max_range": attack_range * 1.25,
-		"show_damage_fx": true,
-	})
-	if not bool(result["hit"]):
-		return 0
-	mp -= skill_mp_cost
-	_skill_cd_left = skill_cooldown
-	return 1
+	var max_range := attack_range * float(def.get("range_multiplier", 1.25))
+	var targets: Array[Node] = []
+	if String(def.get("targeting", "locked")) == "area":
+		max_range = float(def.get("radius", attack_range))
+		targets = enemies_in_radius(max_range)
+		if targets.is_empty():
+			_skill_hint("skill.no_target", COLOR_COOLING)
+			return 0
+	else:
+		if not _has_valid_lock():
+			return 0
+		var target := _locked
+		if not is_instance_valid(target) or not target.is_alive():
+			return 0
+		if global_position.distance_to(target.global_position) > max_range:
+			return 0
+		targets = [target]
 
-
-## 旋风斩：不需锁定，命中半径内所有敌人（伤害低于重击，冷却更长）。
-## 全部被拒绝（无敌帧/已死）时不扣蓝也不进冷却，与重击保持一致。
-func _try_whirlwind() -> int:
-	if _dead:
-		return 0
-	if _whirlwind_cd_left > 0.0:
-		CombatFx.show_text(global_position + Vector2(0.0, -44.0), Locale.t("skill.cooling"),
-				Color(0.75, 0.75, 0.85))
-		return 0
-	if mp < whirlwind_mp_cost:
-		CombatFx.show_text(global_position + Vector2(0.0, -44.0), Locale.t("skill.no_mp"),
-				Color(0.55, 0.65, 0.95))
-		return 0
-
-	var targets := enemies_in_radius(whirlwind_radius)
-	if targets.is_empty():
-		CombatFx.show_text(global_position + Vector2(0.0, -44.0), Locale.t("skill.no_target"),
-				Color(0.75, 0.75, 0.85))
-		return 0
-
+	var multiplier := float(def.get("damage_multiplier", 1.0))
 	var hits := 0
-	for target: Node in targets:
-		var result := CombatService.strike(self, target, {
-			"attack": attack * whirlwind_multiplier,
+	for entry: Node in targets:
+		var result := CombatService.strike(self, entry, {
+			"attack": attack * multiplier,
 			"crit_rate": crit_rate,
 			"crit_damage": crit_damage,
 			"rng": _rng,
-			"max_range": whirlwind_radius,
+			"max_range": max_range,
 			"show_damage_fx": true,
 		})
 		if bool(result["hit"]):
@@ -313,11 +290,18 @@ func _try_whirlwind() -> int:
 	if hits == 0:
 		return 0
 
-	mp -= whirlwind_mp_cost
-	_whirlwind_cd_left = whirlwind_cooldown
-	CombatFx.show_text(global_position + Vector2(0.0, -56.0),
-			Locale.t("skill.whirlwind_hits", [hits]), Color(1.0, 0.85, 0.55))
+	mp -= cost
+	_skill_cd[id] = float(def.get("cooldown", 0.0))
+	# 多目标技能飘「N 连击」，单体不飘（伤害数字本身已经够）。
+	var hits_key := String(def.get("hits_key", ""))
+	if not hits_key.is_empty() and hits > 1:
+		CombatFx.show_text(global_position + Vector2(0.0, -56.0),
+				Locale.t(hits_key, [hits]), COLOR_HIT)
 	return 1
+
+
+func _skill_hint(key: String, color: Color) -> void:
+	CombatFx.show_text(global_position + Vector2(0.0, -44.0), Locale.t(key), color)
 
 
 ## 半径内存活的敌人（AoE 用；不依赖锁定）。
@@ -336,8 +320,9 @@ func enemies_in_radius(radius: float) -> Array[Node]:
 
 ## 魔法回复：死亡时不回；累计小数部分，够 1 点才进位（避免每帧截断导致永远回不满）。
 func _tick_mp(delta: float) -> void:
-	_skill_cd_left = maxf(0.0, _skill_cd_left - delta)
-	_whirlwind_cd_left = maxf(0.0, _whirlwind_cd_left - delta)
+	# 每个技能独立递减（技能数量由技能表决定，这里是通用循环）。
+	for skill_id: String in _skill_cd.keys():
+		_skill_cd[skill_id] = maxf(0.0, float(_skill_cd[skill_id]) - delta)
 	if _dead or mp >= max_mp:
 		return
 	_mp_frac += mp_regen * delta
@@ -873,13 +858,7 @@ func _apply_def() -> void:
 	respawn_delay = float(def.get("respawn_delay", respawn_delay))
 	respawn_invuln = float(def.get("respawn_invuln", respawn_invuln))
 	mp_regen = float(def.get("mp_regen", mp_regen))
-	skill_mp_cost = int(def.get("skill_mp_cost", skill_mp_cost))
-	skill_cooldown = float(def.get("skill_cooldown", skill_cooldown))
-	skill_multiplier = float(def.get("skill_multiplier", skill_multiplier))
-	whirlwind_mp_cost = int(def.get("whirlwind_mp_cost", whirlwind_mp_cost))
-	whirlwind_cooldown = float(def.get("whirlwind_cooldown", whirlwind_cooldown))
-	whirlwind_multiplier = float(def.get("whirlwind_multiplier", whirlwind_multiplier))
-	whirlwind_radius = float(def.get("whirlwind_radius", whirlwind_radius))
+	# 技能参数不在这里读：耗蓝/冷却/倍率/范围全部来自 data/skills/skills.json。
 	auto_approach = bool(def.get("auto_approach", auto_approach))
 	approach_stop_ratio = float(def.get("approach_stop_ratio", approach_stop_ratio))
 	# 持续攻击与仇恨锁的设计默认值（用户可在设置里覆盖前两项）。

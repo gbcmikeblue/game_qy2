@@ -187,16 +187,21 @@ func _test_skill() -> void:
 	await get_tree().physics_frame
 	_check(_player.select_target(target), "技能测试前提：选中目标")
 
+	# 技能参数来自技能表，测试也读表（不再硬编码数值）。
+	var heavy_def: Dictionary = _player.get_skill_def("heavy_strike")
+	var heavy_cost: int = int(heavy_def.get("mp_cost", 0))
+	var heavy_mult: float = float(heavy_def.get("damage_multiplier", 1.0))
+
 	# 1) 正常施放
 	_player.mp = _player.max_mp
-	_player._skill_cd_left = 0.0
+	_player._skill_cd.erase("heavy_strike")
 	var hp_before: int = target.get_hp()
 	var mp_before: int = _player.get_mp()
 	_check(_player.try_skill() == 1, "技能命中返回 1")
 	var dealt: int = hp_before - target.get_hp()
-	var expected := maxi(1, int(round(_player.attack * _player.skill_multiplier - target.get_defense())))
+	var expected := maxi(1, int(round(_player.attack * heavy_mult - target.get_defense())))
 	_check(dealt == expected, "技能伤害 = 攻击×倍率 - 防御（%d，期望 %d）" % [dealt, expected])
-	_check(_player.get_mp() == mp_before - _player.skill_mp_cost,
+	_check(_player.get_mp() == mp_before - heavy_cost,
 			"扣除魔法（%d → %d）" % [mp_before, _player.get_mp()])
 	_check(_player.get_skill_cooldown_left() > 0.0,
 			"进入冷却（剩余 %.1fs）" % _player.get_skill_cooldown_left())
@@ -209,22 +214,22 @@ func _test_skill() -> void:
 			"冷却中既不造成伤害也不扣蓝")
 
 	# 3) 魔法不足：无效，且不进入冷却
-	_player._skill_cd_left = 0.0
-	_player.mp = _player.skill_mp_cost - 1
+	_player._skill_cd.erase("heavy_strike")
+	_player.mp = heavy_cost - 1
 	_check(_player.try_skill() == 0, "魔法不足时返回 0")
 	_check(_player.get_skill_cooldown_left() == 0.0, "施放失败不进入冷却")
 
 	# 4) 目标被清场后技能无效（不调用 clear_targets：那个入口会重置持续攻击状态，
 	#    后续的「持续攻击」用例依赖它保持干净）。
 	_player.mp = _player.max_mp
-	_player._skill_cd_left = 0.0
+	_player._skill_cd.erase("heavy_strike")
 	_clear_enemies()
 	await get_tree().physics_frame
 	await get_tree().physics_frame
 	_check(_player.try_skill() == 0, "没有目标时技能无效")
 
 	_player.mp = _player.max_mp
-	_player._skill_cd_left = 0.0
+	_player._skill_cd.erase("heavy_strike")
 
 
 ## 旋风斩（AoE）：多目标同时结算、独立冷却、无目标不扣蓝。
@@ -238,13 +243,15 @@ func _test_whirlwind() -> void:
 	InputManager.touch_vector = Vector2.ZERO
 	await get_tree().physics_frame
 
+	var whirl_def: Dictionary = _player.get_skill_def("whirlwind")
+	var whirl_cost: int = int(whirl_def.get("mp_cost", 0))
 	var near1 = _spawn_static_enemy(Vector2(40.0, 0.0))
 	var near2 = _spawn_static_enemy(Vector2(-40.0, 20.0))
 	var far = _spawn_static_enemy(Vector2(300.0, 0.0))
 	await get_tree().physics_frame
 
 	_player.mp = _player.max_mp
-	_player._whirlwind_cd_left = 0.0
+	_player._skill_cd.erase("whirlwind")
 	var heavy_cd_before: float = _player.get_skill_cooldown_left("heavy_strike")
 	var hp1: int = near1.get_hp()
 	var hp2: int = near2.get_hp()
@@ -254,7 +261,7 @@ func _test_whirlwind() -> void:
 	_check(near1.get_hp() < hp1 and near2.get_hp() < hp2,
 			"半径内两只怪同时掉血（%d / %d）" % [hp1 - near1.get_hp(), hp2 - near2.get_hp()])
 	_check(far.get_hp() == hp_far, "半径外的怪不掉血")
-	_check(_player.get_mp() == _player.max_mp - _player.whirlwind_mp_cost,
+	_check(_player.get_mp() == _player.max_mp - whirl_cost,
 			"扣除旋风斩魔法（余 %d）" % _player.get_mp())
 	_check(_player.get_skill_cooldown_left("whirlwind") > 0.0, "旋风斩进入冷却")
 	_check(is_equal_approx(_player.get_skill_cooldown_left("heavy_strike"), heavy_cd_before),
@@ -269,7 +276,7 @@ func _test_whirlwind() -> void:
 	_clear_enemies()
 	await get_tree().physics_frame
 	await get_tree().physics_frame
-	_player._whirlwind_cd_left = 0.0
+	_player._skill_cd.erase("whirlwind")
 	var mp_before: int = _player.get_mp()
 	_check(_player.try_skill("whirlwind") == 0, "附近没有敌人时返回 0")
 	_check(_player.get_mp() == mp_before, "无目标不扣蓝")
@@ -859,7 +866,7 @@ func _test_death_and_respawn() -> void:
 
 # ---------------- 工具 ----------------
 
-## 造一只“站桩”怪：位置固定、不参与 AI 物理，保证点击几何关系稳定。
+## 造一只"站桩"怪：位置固定、不参与 AI 物理，保证点击几何关系稳定。
 func _spawn_static_enemy(offset: Vector2, type := "forest_wolf"):
 	var enemy = _map.spawn_enemy(type, Vector2i(12, 14))
 	enemy.global_position = _player.global_position + offset
@@ -897,7 +904,7 @@ func _test_aggro_targeting() -> void:
 	await get_tree().physics_frame
 	_check(_player.get_selected_target() == a, "B 随后攻击不切换目标（先到先得）")
 
-	# 长按秒数内的“同一只怪继续攻击”只续期，不换目标
+	# 长按秒数内的"同一只怪继续攻击"只续期，不换目标
 	for i in 24:
 		await get_tree().physics_frame
 	_player.take_damage(5, a)

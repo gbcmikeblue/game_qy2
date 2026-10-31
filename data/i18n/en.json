@@ -124,6 +124,8 @@
   "button.inventory": "BAG",
   "button.skill": "SKILL",
   "button.skill.heavy": "SMASH",
+  "skill.heavy.name": "Heavy Strike",
+  "skill.whirlwind.name": "Whirlwind",
   "button.skill.whirlwind": "WHIRL",
   "skill.no_target": "No enemy nearby",
   "skill.whirlwind_hits": "Whirlwind x%d",

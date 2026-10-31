@@ -12,6 +12,7 @@ const PLAYER_SCENE := preload("res://scenes/actors/player/player.tscn")
 const MAIN_MENU := preload("res://scenes/ui/main_menu.tscn")
 const GAME_SCENE := preload("res://scenes/boot/main.tscn")
 const INVENTORY_PANEL := preload("res://scenes/ui/inventory_panel.tscn")
+const HUD_SCENE := preload("res://scenes/ui/hud.tscn")
 
 var _failures: Array[String] = []
 
@@ -62,6 +63,7 @@ func _ready() -> void:
 	await _test_quest_panel()
 	_test_audio()
 	_test_audio_settings()
+	await _test_skill_table()
 	SaveService.autosave_enabled = true
 	InventoryService.reset()
 	_report()
@@ -989,6 +991,47 @@ func _test_audio_settings() -> void:
 
 	GameSettings.set_audio_value("sfx_enabled", saved_enabled)
 	GameSettings.set_audio_value("sfx_volume", saved_volume)
+
+
+# ---------------- 技能表：字段合法 / id 唯一 / 默认技能 / area 参数 ----------------
+
+func _test_skill_table() -> void:
+	var skills := DataRegistry.get_skills()
+	_check(skills.size() >= 2, "技能表至少 2 条（%d）" % skills.size())
+
+	var ids: Dictionary = {}
+	var bad := 0
+	for entry: Variant in skills:
+		if typeof(entry) != TYPE_DICTIONARY:
+			bad += 1
+			continue
+		var def := entry as Dictionary
+		ids[String(def.get("id", ""))] = true
+		if not ["locked", "area"].has(String(def.get("targeting", ""))):
+			bad += 1
+		if int(def.get("mp_cost", -1)) < 0 or float(def.get("cooldown", -1.0)) < 0.0:
+			bad += 1
+		if String(def.get("button_key", "")).is_empty():
+			bad += 1
+	_check(bad == 0, "技能字段合法（异常 %d 条）" % bad)
+	_check(ids.size() == skills.size(), "技能 id 不重复（%d / %d）" % [ids.size(), skills.size()])
+	_check(String(DataRegistry.default_skill_id()) == "heavy_strike",
+			"默认技能是重击（%s）" % DataRegistry.default_skill_id())
+
+	var whirl := DataRegistry.get_skill("whirlwind")
+	_check(String(whirl.get("targeting", "")) == "area" and float(whirl.get("radius", 0.0)) > 0.0,
+			"旋风斩是按半径结算的 area 技能（r=%.0f）" % float(whirl.get("radius", 0.0)))
+	_check(DataRegistry.get_skill("no_such_skill").is_empty(), "未定义技能返回空字典")
+
+	# HUD 按表生成按钮：表里有几条，按钮就该有几个（场景只预留 2 个槽位）。
+	var hud = HUD_SCENE.instantiate()
+	add_child(hud)
+	await get_tree().process_frame
+	_check(hud.skill_button_count() == skills.size(),
+			"技能按钮数与技能表一致（%d / %d）" % [hud.skill_button_count(), skills.size()])
+	remove_child(hud)
+	hud.queue_free()
+	await get_tree().process_frame
 
 
 func _make_entry(item_id: StringName, chance: float, low: int, high: int) -> LootEntry:

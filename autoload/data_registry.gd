@@ -8,6 +8,7 @@ const PLAYER_DEF_PATH := "res://data/actors/player.json"
 const CLASSES_PATH := "res://data/actors/classes.json"
 const INTERACTION_PATH := "res://data/targets/interactions.json"
 const QUESTS_PATH := "res://data/quests/quests.json"
+const SKILLS_PATH := "res://data/skills/skills.json"
 
 var enemies: Dictionary = {}
 var player_def: Dictionary = {}
@@ -18,6 +19,8 @@ var interactions: Dictionary = {}
 var interaction_fallback := "monster"
 ## 任务定义（顺序即推荐接取顺序）：id -> {id, title_key, target, required, reward_*}。
 var quests: Array = []
+## 技能表（顺序即 HUD 按钮顺序）：id -> {id, name_key, button_key, targeting, mp_cost, cooldown, ...}。
+var skills: Array = []
 
 
 func _ready() -> void:
@@ -26,6 +29,7 @@ func _ready() -> void:
 	_load_class_defs()
 	_load_interactions()
 	_load_quests()
+	_load_skills()
 
 
 func get_enemy_def(id: String) -> Dictionary:
@@ -34,6 +38,26 @@ func get_enemy_def(id: String) -> Dictionary:
 
 func get_player_def() -> Dictionary:
 	return player_def
+
+
+## 技能表（按 JSON 顺序，即 HUD 按钮顺序）。
+func get_skills() -> Array:
+	return skills
+
+
+func get_skill(skill_id: String) -> Dictionary:
+	for skill: Variant in skills:
+		if typeof(skill) == TYPE_DICTIONARY and String((skill as Dictionary).get("id", "")) == skill_id:
+			return skill as Dictionary
+	return {}
+
+
+## 第一个技能 id（不传 id 时的默认值）。
+func default_skill_id() -> String:
+	for skill: Variant in skills:
+		if typeof(skill) == TYPE_DICTIONARY:
+			return String((skill as Dictionary).get("id", ""))
+	return ""
 
 
 ## 任务定义列表（按 JSON 顺序）。
@@ -121,6 +145,32 @@ func _load_quests() -> void:
 			push_error("任务 %s 的 required 必须 > 0" % quest.get("id", ""))
 			continue
 		quests.append(quest)
+
+
+## 技能表校验：缺 id / 缺 targeting / 数值非法都跳过并报错，不让坏数据进内存。
+func _load_skills() -> void:
+	var parsed: Variant = _read_json(SKILLS_PATH)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return
+	for entry: Variant in (parsed as Dictionary).get("skills", []):
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var skill := entry as Dictionary
+		var id := String(skill.get("id", ""))
+		if id.is_empty():
+			push_error("技能缺少 id：%s" % str(skill))
+			continue
+		var targeting := String(skill.get("targeting", ""))
+		if targeting != "locked" and targeting != "area":
+			push_error("技能 %s 的 targeting 非法（应为 locked / area）：%s" % [id, targeting])
+			continue
+		if int(skill.get("mp_cost", 0)) < 0 or float(skill.get("cooldown", 0.0)) < 0.0:
+			push_error("技能 %s 的 mp_cost / cooldown 不能为负" % id)
+			continue
+		if targeting == "area" and float(skill.get("radius", 0.0)) <= 0.0:
+			push_error("技能 %s 是 area 但 radius <= 0" % id)
+			continue
+		skills.append(skill)
 
 
 func _load_class_defs() -> void:
