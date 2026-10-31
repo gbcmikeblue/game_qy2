@@ -121,6 +121,7 @@ func load_slot(slot: int) -> bool:
 	var raw_player: Variant = payload.get("player", {})
 	if typeof(raw_player) == TYPE_DICTIONARY:
 		player_data = raw_player as Dictionary
+	QuestService.restore(payload.get("quests", {}))
 	InventoryService.restore_state({
 		"inventory": payload.get("inventory", []),
 		"equipment": payload.get("equipment", {}),
@@ -172,6 +173,7 @@ func snapshot() -> Dictionary:
 		"position": position,
 		"inventory": inventory,
 		"equipment": equipment,
+		"quests": QuestService.snapshot(),
 	}
 
 

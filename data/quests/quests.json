@@ -1,0 +1,32 @@
+{
+  "quests": [
+    {
+      "id": "quest_wolf_hunt",
+      "title_key": "quest.wolf_hunt.title",
+      "target": "forest_wolf",
+      "required": 3,
+      "reward_gold": 50,
+      "reward_items": []
+    },
+    {
+      "id": "quest_boar_hunt",
+      "title_key": "quest.boar_hunt.title",
+      "target": "stone_boar",
+      "required": 2,
+      "reward_gold": 30,
+      "reward_items": [
+        { "id": "con_medkit", "qty": 2 }
+      ]
+    },
+    {
+      "id": "quest_bat_hunt",
+      "title_key": "quest.bat_hunt.title",
+      "target": "cave_bat",
+      "required": 4,
+      "reward_gold": 60,
+      "reward_items": [
+        { "id": "wep_iron_axe", "qty": 1 }
+      ]
+    }
+  ]
+}

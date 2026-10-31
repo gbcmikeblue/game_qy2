@@ -5,6 +5,13 @@
 
   "menu.title": "等距 RPG",
 
+  "quest.progress": "任务：%s %d/%d",
+  "quest.completed": "任务完成：%s",
+  "quest.unknown.title": "未知任务",
+  "quest.wolf_hunt.title": "猎狼",
+  "quest.boar_hunt.title": "野猪之患",
+  "quest.bat_hunt.title": "洞穴清剿",
+
   "npc.merchant.name": "商人",
   "menu.new_game": "新游戏",
   "menu.load_title": "读取存档",

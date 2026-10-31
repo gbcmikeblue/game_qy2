@@ -7,6 +7,7 @@ const ENEMY_DEF_PATH := "res://data/actors/enemies.json"
 const PLAYER_DEF_PATH := "res://data/actors/player.json"
 const CLASSES_PATH := "res://data/actors/classes.json"
 const INTERACTION_PATH := "res://data/targets/interactions.json"
+const QUESTS_PATH := "res://data/quests/quests.json"
 
 var enemies: Dictionary = {}
 var player_def: Dictionary = {}
@@ -15,6 +16,8 @@ var classes: Dictionary = {}
 ## 目标类型 -> 主操作按钮文案（i18n key）；新增交互对象只改 JSON。
 var interactions: Dictionary = {}
 var interaction_fallback := "monster"
+## 任务定义（顺序即推荐接取顺序）：id -> {id, title_key, target, required, reward_*}。
+var quests: Array = []
 
 
 func _ready() -> void:
@@ -22,6 +25,7 @@ func _ready() -> void:
 	_load_player_def()
 	_load_class_defs()
 	_load_interactions()
+	_load_quests()
 
 
 func get_enemy_def(id: String) -> Dictionary:
@@ -30,6 +34,18 @@ func get_enemy_def(id: String) -> Dictionary:
 
 func get_player_def() -> Dictionary:
 	return player_def
+
+
+## 任务定义列表（按 JSON 顺序）。
+func get_quests() -> Array:
+	return quests
+
+
+func get_quest(quest_id: String) -> Dictionary:
+	for quest: Variant in quests:
+		if typeof(quest) == TYPE_DICTIONARY and String((quest as Dictionary).get("id", "")) == quest_id:
+			return quest as Dictionary
+	return {}
 
 
 func get_class_def(class_id: String) -> Dictionary:
@@ -88,6 +104,23 @@ func _load_player_def() -> void:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return
 	player_def = (parsed as Dictionary).get("player", {})
+
+
+func _load_quests() -> void:
+	var parsed: Variant = _read_json(QUESTS_PATH)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return
+	for entry: Variant in (parsed as Dictionary).get("quests", []):
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var quest := entry as Dictionary
+		if String(quest.get("id", "")).is_empty():
+			push_error("任务配置缺少 id：%s" % str(quest))
+			continue
+		if int(quest.get("required", 0)) <= 0:
+			push_error("任务 %s 的 required 必须 > 0" % quest.get("id", ""))
+			continue
+		quests.append(quest)
 
 
 func _load_class_defs() -> void:

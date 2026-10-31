@@ -2,7 +2,7 @@ extends CanvasLayer
 
 ## HUD：血条 + 选中目标状态 + 调试信息 + 设置入口。
 ## 语言切换入口已迁到设置面板（本层不再有 LANG 按钮）。
-## 主操作按钮的文案随“选中目标类型”变化（怪物=攻击 / NPC=交互 / 植物=采摘 / 玩家=观察），
+## 主操作按钮的文案随"选中目标类型"变化（怪物=攻击 / NPC=交互 / 植物=采摘 / 玩家=观察），
 ## 类型到文案 key 的映射在 data/targets/interactions.json，语言由 Locale 实时切换。
 
 ## 血条填充相对 HpBack 的内缩（左右各 2 逻辑像素），宽度按 HpBack 的实时宽度算比例，
@@ -23,6 +23,7 @@ const INVENTORY_PANEL := preload("res://scenes/ui/inventory_panel.tscn")
 @onready var _settings_button: UiButton = $SettingsButton
 @onready var _inventory_button: UiButton = $InventoryButton
 @onready var _hint_label: Label = $HintLabel
+@onready var _quest_label: Label = $QuestLabel
 
 var _lock_line := ""
 var _panel: Node = null
@@ -33,7 +34,7 @@ var _base_offsets: Dictionary = {}
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	for label: Label in [_debug_label, _hp_label, _hint_label]:
+	for label: Label in [_debug_label, _hp_label, _hint_label, _quest_label]:
 		label.add_theme_font_override("font", Locale.font)
 		label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.92))
 		label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
@@ -56,12 +57,38 @@ func _ready() -> void:
 	_inventory_button.pressed.connect(_on_inventory_pressed)
 	Locale.language_changed.connect(_on_texts_changed)
 	GameSettings.bindings_changed.connect(_on_texts_changed)
+	EventBus.quest_updated.connect(_on_quest_changed)
+	EventBus.quest_completed.connect(_on_quest_completed)
 	_refresh_texts()
+	_refresh_quest()
 
 
 func _exit_tree() -> void:
 	if DisplayAdapter.layout_changed.is_connected(_on_layout_changed):
 		DisplayAdapter.layout_changed.disconnect(_on_layout_changed)
+	if EventBus.quest_updated.is_connected(_on_quest_changed):
+		EventBus.quest_updated.disconnect(_on_quest_changed)
+	if EventBus.quest_completed.is_connected(_on_quest_completed):
+		EventBus.quest_completed.disconnect(_on_quest_completed)
+
+
+## 任务行：没有任务时留空（不占视觉），有任务时显示「任务：标题 2/3」。
+func _refresh_quest() -> void:
+	_quest_label.text = QuestService.progress_text()
+
+
+func _on_quest_changed(_quest_id: String, _current: int, _required: int) -> void:
+	_refresh_quest()
+
+
+func _on_quest_completed(quest_id: String) -> void:
+	_refresh_quest()
+	var hero := GameManager.get_player()
+	if hero is Node2D:
+		var quest := DataRegistry.get_quest(quest_id)
+		var title := Locale.t(String(quest.get("title_key", "quest.unknown.title")))
+		CombatFx.show_text((hero as Node2D).global_position + Vector2(0.0, -40.0),
+				Locale.t("quest.completed", [title]), Color(1.0, 0.9, 0.45))
 
 
 ## 字号 dp 化：与设置面板共用角色表，真机上正文 ≥14dp、辅助说明 ≥12dp。
@@ -70,6 +97,7 @@ func _apply_fonts() -> void:
 		DisplayAdapter.text_px_fixed("helper"))
 	_hp_label.add_theme_font_size_override("font_size", DisplayAdapter.text_px("body"))
 	_hint_label.add_theme_font_size_override("font_size", DisplayAdapter.text_px("helper"))
+	_quest_label.add_theme_font_size_override("font_size", DisplayAdapter.text_px("helper"))
 	_settings_button.font_size = DisplayAdapter.text_px("helper")
 	_settings_button.queue_redraw()
 	_inventory_button.font_size = DisplayAdapter.text_px("helper")
@@ -142,7 +170,7 @@ func _refresh_texts() -> void:
 	_update_hint()
 
 
-## 主操作按钮文案：由当前选中目标的类型决定，未选中时回退为“攻击”。
+## 主操作按钮文案：由当前选中目标的类型决定，未选中时回退为"攻击"。
 ## 文案 key 变化时同步刷新底部提示，避免按钮与提示不一致。
 func _update_action_button() -> void:
 	var key := "action.attack"

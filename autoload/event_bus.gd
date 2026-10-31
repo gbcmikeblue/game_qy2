@@ -25,6 +25,9 @@ signal gold_changed(gold: int)
 signal level_changed(level: int, exp: int)
 ## 地面上拾取到物品（飘字与音效入口）。
 signal item_picked_up(item_id: String, qty: int)
+## 任务进度变化 / 完成（HUD 与音效入口）。
+signal quest_updated(quest_id: String, current: int, required: int)
+signal quest_completed(quest_id: String)
 ## 走进传送点：由 PortalNode 发出，main 负责真正的换图。
 signal portal_entered(target_map: String, target_cell: Vector2i)
 ## 敌人被击杀（带世界坐标）：掉落服务据此生成地面物并结算金币/经验。

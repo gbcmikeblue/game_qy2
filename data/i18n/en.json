@@ -5,6 +5,13 @@
 
   "menu.title": "ISO RPG",
 
+  "quest.progress": "Quest: %s %d/%d",
+  "quest.completed": "Quest complete: %s",
+  "quest.unknown.title": "Unknown quest",
+  "quest.wolf_hunt.title": "Wolf Hunt",
+  "quest.boar_hunt.title": "Boar Trouble",
+  "quest.bat_hunt.title": "Cave Cleanup",
+
   "npc.merchant.name": "Merchant",
   "menu.new_game": "NEW GAME",
   "menu.load_title": "LOAD GAME",

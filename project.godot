@@ -26,6 +26,7 @@ DataRegistry="*res://autoload/data_registry.gd"
 ItemRegistry="*res://scripts/items/item_registry.gd"
 InventoryService="*res://scripts/items/inventory_service.gd"
 SaveService="*res://scripts/items/save_service.gd"
+QuestService="*res://scripts/quests/quest_service.gd"
 
 [display]
 

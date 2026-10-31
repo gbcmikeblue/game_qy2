@@ -58,6 +58,7 @@ func _ready() -> void:
 	await _test_multi_map()
 	await _test_portals()
 	await _test_npc()
+	await _test_quests()
 	SaveService.autosave_enabled = true
 	InventoryService.reset()
 	_report()
@@ -839,6 +840,51 @@ func _test_npc() -> void:
 	remove_child(game)
 	game.queue_free()
 	await get_tree().process_frame
+	InventoryService.reset()
+
+
+# ---------------- 任务：计数 / 完成发奖 / 不重复发奖 / 存档往返 ----------------
+
+func _test_quests() -> void:
+	QuestService.reset()
+	InventoryService.reset()
+
+	_check(DataRegistry.get_quests().size() == 3, "任务数据载入 3 条（%d）" % DataRegistry.get_quests().size())
+	_check(not DataRegistry.get_quest("quest_wolf_hunt").is_empty(), "能按 id 取到任务定义")
+	_check(QuestService.active_id == "quest_wolf_hunt",
+			"默认接取第一条任务（%s）" % QuestService.active_id)
+
+	var gold_before := InventoryService.gold
+
+	# 非目标怪不计进度
+	EventBus.enemy_defeated.emit("stone_boar", Vector2.ZERO)
+	_check(QuestService.current_progress() == 0, "非目标怪不推进任务进度")
+
+	# 打满 3 只目标怪 → 完成并接取下一条
+	for i in 3:
+		EventBus.enemy_defeated.emit("forest_wolf", Vector2.ZERO)
+	_check(QuestService.completed.has("quest_wolf_hunt"), "达到数量后任务标记完成")
+	_check(InventoryService.gold == gold_before + 50,
+			"发放金币奖励 50（实际 %d）" % InventoryService.gold)
+	_check(QuestService.active_id == "quest_boar_hunt",
+			"自动接取下一条任务（%s）" % QuestService.active_id)
+
+	# 已完成的任务不再重复结算
+	EventBus.enemy_defeated.emit("forest_wolf", Vector2.ZERO)
+	_check(InventoryService.gold == gold_before + 50, "已完成任务不重复发奖")
+
+	# 存档往返
+	var text_before := QuestService.progress_text()
+	_check(SaveService.save_slot(2), "带任务进度存档成功")
+	QuestService.reset()
+	_check(QuestService.active_id == "quest_wolf_hunt", "reset 后回到第一条任务")
+	_check(SaveService.load_slot(2), "读档成功")
+	_check(QuestService.active_id == "quest_boar_hunt",
+			"读档恢复当前任务（%s）" % QuestService.active_id)
+	_check(QuestService.progress_text() == text_before, "读档恢复任务进度文案")
+
+	SaveService.delete_slot(2)
+	QuestService.reset()
 	InventoryService.reset()
 
 
