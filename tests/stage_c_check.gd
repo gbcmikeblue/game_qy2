@@ -709,6 +709,15 @@ func _test_multi_map() -> void:
 	_check(game.map.get_pathfinder() != null, "新图寻路已建好")
 	_check(String(SaveService.current_map_id) == "test_map_02", "存档记录的地图同步更新")
 
+	# 回归：换图要把玩家从旧地图摘下再挂到新地图，会触发 exit/enter tree。
+	# 如果信号只在 _ready 里接，换图后攻击按钮就再也没反应（实测踩过）。
+	var attack_connected := false
+	for connection: Dictionary in EventBus.attack_requested.get_connections():
+		var callable: Callable = connection["callable"]
+		if callable.get_object() == hero:
+			attack_connected = true
+	_check(attack_connected, "换图后玩家仍连着 attack_requested（攻击按钮不失效）")
+
 	# 在新图存档 → 切回旧图 → 读档：应自动切回存档所在地图
 	InventoryService.gold = 42
 	_check(SaveService.save_slot(3), "在新图存档成功")

@@ -110,14 +110,31 @@ func _ready() -> void:
 	_health.setup(int(max_hp))
 	_health.died.connect(_on_died)
 	_health.hp_changed.connect(_on_hp_changed)
-	EventBus.attack_requested.connect(_on_attack_requested)
-	EventBus.attack_pressed.connect(_on_attack_pressed)
-	EventBus.skill_requested.connect(_on_skill_requested)
-	EventBus.game_paused.connect(_on_game_paused)
-	EventBus.equipment_changed.connect(_on_stats_changed)
-	EventBus.level_changed.connect(_on_stats_changed)
-	GameSettings.combat_changed.connect(_apply_combat_settings)
 	_apply_combat_settings()
+
+
+## 信号在 enter_tree 里接、exit_tree 里断：
+## 换图会把玩家从旧地图摘下再挂到新地图，这会触发 exit/enter tree，
+## 而 _ready 只跑一次——如果只在 _ready 接线，换图后攻击按钮就再也没反应了。
+func _enter_tree() -> void:
+	_connect_events()
+
+
+func _connect_events() -> void:
+	if not EventBus.attack_requested.is_connected(_on_attack_requested):
+		EventBus.attack_requested.connect(_on_attack_requested)
+	if not EventBus.attack_pressed.is_connected(_on_attack_pressed):
+		EventBus.attack_pressed.connect(_on_attack_pressed)
+	if not EventBus.skill_requested.is_connected(_on_skill_requested):
+		EventBus.skill_requested.connect(_on_skill_requested)
+	if not EventBus.game_paused.is_connected(_on_game_paused):
+		EventBus.game_paused.connect(_on_game_paused)
+	if not EventBus.equipment_changed.is_connected(_on_stats_changed):
+		EventBus.equipment_changed.connect(_on_stats_changed)
+	if not EventBus.level_changed.is_connected(_on_stats_changed):
+		EventBus.level_changed.connect(_on_stats_changed)
+	if not GameSettings.combat_changed.is_connected(_apply_combat_settings):
+		GameSettings.combat_changed.connect(_apply_combat_settings)
 
 
 func _exit_tree() -> void:
