@@ -37,6 +37,9 @@ var _panel: ColorRect
 var _name_label: Label
 var _body_label: Label
 var _actions_host: Control
+var _actions_scroll: ScrollContainer
+## actions = 主菜单；quests = 任务列表（两段式）。
+var _mode := "actions"
 var _hint: Label
 var _actions: Array[String] = []
 var _buttons: Array[UiButton] = []
@@ -91,11 +94,19 @@ func _build() -> void:
 	_body_label = _label(Vector2(24.0, 50.0), Vector2(520.0, 108.0), FONT_BODY)
 	_body_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
+	# 按钮列放进滚动容器：任务多时不会超出对话框。
+	_actions_scroll = ScrollContainer.new()
+	_actions_scroll.position = Vector2(556.0, 14.0)
+	_actions_scroll.size = Vector2(BUTTON_WIDTH + 8.0, DESIGN.y - 28.0)
+	_actions_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_actions_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_actions_scroll.scroll_deadzone = 6
+	_panel.add_child(_actions_scroll)
+
 	_actions_host = Control.new()
-	_actions_host.position = Vector2(560.0, 16.0)
-	_actions_host.size = Vector2(BUTTON_WIDTH, DESIGN.y - 32.0)
+	_actions_host.size = Vector2(BUTTON_WIDTH, DESIGN.y - 28.0)
 	_actions_host.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_panel.add_child(_actions_host)
+	_actions_scroll.add_child(_actions_host)
 
 	_hint = _label(Vector2(24.0, DESIGN.y - 34.0), Vector2(520.0, 26.0), FONT_BUTTON)
 	_hint.add_theme_color_override("font_color", Color(0.70, 0.90, 0.70))
@@ -151,7 +162,8 @@ func _refresh_texts() -> void:
 	_body_label.text = Locale.t(body)
 
 
-## 按钮由情境决定，顺序固定：交易 → 接取 → 交付 → 离开。
+## 两段式界面：actions = 主菜单（交易 / 任务 / 离开），quests = 任务列表。
+## 任务列表按「可交付 → 可接取 → 返回」排列，每条带 id，玩家自己选。
 func _refresh_actions() -> void:
 	for child: Node in _actions_host.get_children():
 		_actions_host.remove_child(child)
@@ -159,13 +171,19 @@ func _refresh_actions() -> void:
 	_actions.clear()
 	_buttons.clear()
 
-	if shop_id != &"":
-		_actions.append("trade")
-	if quest_giver and not QuestService.available_quests().is_empty():
-		_actions.append("accept")
-	if quest_giver and not QuestService.turn_in_quests().is_empty():
-		_actions.append("turn_in")
-	_actions.append("leave")
+	if _mode == "quests":
+		for quest: Dictionary in QuestService.turn_in_quests():
+			_actions.append("turn_in:" + String(quest.get("id", "")))
+		for quest: Dictionary in QuestService.available_quests():
+			_actions.append("accept:" + String(quest.get("id", "")))
+		_actions.append("back")
+	else:
+		if shop_id != &"":
+			_actions.append("trade")
+		if quest_giver and not (QuestService.available_quests().is_empty()
+				and QuestService.turn_in_quests().is_empty()):
+			_actions.append("quests")
+		_actions.append("leave")
 
 	for index in _actions.size():
 		var button := _button(Vector2(0.0, float(index) * (BUTTON_HEIGHT + BUTTON_GAP)),
@@ -173,53 +191,64 @@ func _refresh_actions() -> void:
 		button.set_caption(_action_caption(_actions[index]))
 		button.pressed.connect(_on_action_pressed.bind(_actions[index]))
 		_buttons.append(button)
+	# 行数超出可视高度时按实际高度撑开滚动区（任务多的时候不至于被裁掉）。
+	var needed := float(_actions.size()) * (BUTTON_HEIGHT + BUTTON_GAP)
+	_actions_host.custom_minimum_size = Vector2(BUTTON_WIDTH, needed)
 
 
 func _action_caption(action: String) -> String:
+	if action.begins_with("accept:"):
+		return Locale.t("dialogue.accept_item", [_quest_title(action.substr(7))])
+	if action.begins_with("turn_in:"):
+		return Locale.t("dialogue.turn_in_item", [_quest_title(action.substr(8))])
 	match action:
 		"trade":
 			return Locale.t("dialogue.trade")
-		"accept":
-			return Locale.t("dialogue.accept")
-		"turn_in":
-			return Locale.t("dialogue.turn_in")
+		"quests":
+			return Locale.t("dialogue.quests")
+		"back":
+			return Locale.t("dialogue.back")
 		_:
 			return Locale.t("dialogue.leave")
 
 
+func _quest_title(quest_id: String) -> String:
+	var quest := DataRegistry.get_quest(quest_id)
+	return Locale.t(String(quest.get("title_key", "quest.unknown.title")))
+
+
 func _on_action_pressed(action: String) -> void:
+	if action.begins_with("accept:"):
+		_accept_quest(action.substr(7))
+		return
+	if action.begins_with("turn_in:"):
+		_turn_in_quest(action.substr(8))
+		return
 	match action:
 		"trade":
 			trade_requested.emit(shop_id)
 			_close()
-		"accept":
-			_accept_quest()
-		"turn_in":
-			_turn_in_quest()
+		"quests":
+			_mode = "quests"
+			_refresh_actions()
+		"back":
+			_mode = "actions"
+			_refresh_actions()
 		_:
 			_close()
 
 
-func _accept_quest() -> void:
-	var available := QuestService.available_quests()
-	if available.is_empty():
-		_show_hint(Locale.t("dialogue.no_quest"))
-		return
-	var quest: Dictionary = available[0]
-	if QuestService.accept(String(quest["id"])):
-		_show_hint(Locale.t("dialogue.accepted",
-				[Locale.t(String(quest.get("title_key", "quest.unknown.title")))]))
+func _accept_quest(quest_id: String) -> void:
+	if QuestService.accept(quest_id):
+		_show_hint(Locale.t("dialogue.accepted", [_quest_title(quest_id)]))
+		_mode = "actions"
 		_refresh_actions()
 
 
-func _turn_in_quest() -> void:
-	var ready := QuestService.turn_in_quests()
-	if ready.is_empty():
-		return
-	var quest: Dictionary = ready[0]
-	if QuestService.turn_in(String(quest["id"])):
-		_show_hint(Locale.t("dialogue.turned_in",
-				[Locale.t(String(quest.get("title_key", "quest.unknown.title")))]))
+func _turn_in_quest(quest_id: String) -> void:
+	if QuestService.turn_in(quest_id):
+		_show_hint(Locale.t("dialogue.turned_in", [_quest_title(quest_id)]))
+		_mode = "actions"
 		_refresh_actions()
 
 

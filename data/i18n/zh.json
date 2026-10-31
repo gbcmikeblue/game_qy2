@@ -22,6 +22,10 @@
 
   "dialogue.default": "……",
   "dialogue.trade": "交易",
+  "dialogue.quests": "任务",
+  "dialogue.back": "返回",
+  "dialogue.accept_item": "接取：%s",
+  "dialogue.turn_in_item": "交付：%s",
   "dialogue.accept": "接取任务",
   "dialogue.turn_in": "交付任务",
   "dialogue.leave": "离开",

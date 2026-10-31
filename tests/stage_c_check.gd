@@ -840,12 +840,34 @@ func _test_npc() -> void:
 		_check(dialogue.action_at(0) == "trade", "第一个动作是交易（%s）" % dialogue.action_at(0))
 		_check(dialogue.action_at(dialogue.action_count() - 1) == "leave",
 				"最后一个动作是离开（%s）" % dialogue.action_at(dialogue.action_count() - 1))
-		_check(dialogue.action_at(1) == "accept", "商人兼发任务，第二个动作是接取（%s）" % dialogue.action_at(1))
+		_check(dialogue.action_at(1) == "quests", "商人兼发任务，第二个动作是任务列表（%s）" % dialogue.action_at(1))
 
-		# 接取任务后再交付按钮才会出现
-		_check(dialogue.press_action("accept"), "点接取任务")
-		_check(QuestService.active_id == "quest_wolf_hunt",
-				"接取后当前任务为猎狼（%s）" % QuestService.active_id)
+		# 进任务列表：3 条可接 + 返回，玩家自己选（不再默认取第一条）
+		_check(dialogue.press_action("quests"), "点任务进入列表")
+		_check(dialogue.action_at(0) == "accept:quest_wolf_hunt",
+				"列表第一条是猎狼（%s）" % dialogue.action_at(0))
+		_check(dialogue.action_at(2) == "accept:quest_bat_hunt",
+				"列表第三条是蝙蝠（%s）" % dialogue.action_at(2))
+		_check(dialogue.action_at(dialogue.action_count() - 1) == "back",
+				"列表最后是返回（%s）" % dialogue.action_at(dialogue.action_count() - 1))
+
+		# 选第二条（野猪），验证「选谁就接谁」
+		_check(dialogue.press_action("accept:quest_boar_hunt"), "选接野猪任务")
+		_check(QuestService.active_id == "quest_boar_hunt",
+				"接取的是被点的那条（%s）" % QuestService.active_id)
+		_check(dialogue.action_at(dialogue.action_count() - 1) == "leave",
+				"接取后回到主菜单（%s）" % dialogue.action_at(dialogue.action_count() - 1))
+
+		# 达标后列表顶部出现「交付」，点它就结算发奖
+		QuestService.progress["quest_boar_hunt"] = QuestService.current_required()
+		_check(dialogue.press_action("quests"), "再次进入任务列表")
+		_check(dialogue.action_at(0) == "turn_in:quest_boar_hunt",
+				"达标任务排在最前（%s）" % dialogue.action_at(0))
+		var gold_before: int = InventoryService.gold
+		_check(dialogue.press_action("turn_in:quest_boar_hunt"), "点交付")
+		_check(QuestService.completed.has("quest_boar_hunt"), "交付后标记完成")
+		_check(InventoryService.gold > gold_before,
+				"交付发放奖励（%d → %d）" % [gold_before, InventoryService.gold])
 
 		# 点交易 → 关对话 + 开商店面板（落在商店页）
 		_check(dialogue.press_action("trade"), "点交易")

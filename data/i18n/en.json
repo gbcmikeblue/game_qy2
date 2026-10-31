@@ -22,6 +22,10 @@
 
   "dialogue.default": "...",
   "dialogue.trade": "TRADE",
+  "dialogue.quests": "QUESTS",
+  "dialogue.back": "BACK",
+  "dialogue.accept_item": "Take: %s",
+  "dialogue.turn_in_item": "Turn in: %s",
   "dialogue.accept": "TAKE QUEST",
   "dialogue.turn_in": "TURN IN",
   "dialogue.leave": "LEAVE",
