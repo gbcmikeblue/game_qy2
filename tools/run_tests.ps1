@@ -115,12 +115,14 @@ foreach ($name in $selected) {
 	$code = -1
 	if ($exited) { $proc.Refresh(); $code = $proc.ExitCode }
 	$allPass = $text -match '结果：全部通过'
-	# 只有「一条断言都没跑」才判定为脚本没加载起来：主场景里个别资源的历史 BOM
-	# 会打出无害的 Parse Error，不能据此误报整组失败。
-	$parseError = ($pass -eq 0) -and ($text -match 'Parse Error|Failed to load script')
+	# 硬编译失败一律红灯：依赖链编译不通过时，上层脚本会继续用旧字节码，
+	# 断言可能「通过」但跑的是上一版逻辑（本轮就踩过：三元 Variant 推断报错 → 面板用了旧 ItemData）。
+	$compileError = $text -match 'Compile Error|Failed to load script'
+	# 单点 Parse Error 只在一条断言都没跑时才算失败（主场景里个别历史 BOM 是无害的）。
+	$parseError = ($pass -eq 0) -and ($text -match 'Parse Error')
 
 	$status = if (-not $exited) { 'TIMEOUT' }
-		elseif ($parseError) { 'PARSE_ERR' }
+		elseif ($compileError -or $parseError) { 'COMPILE' }
 		elseif ($failCount -gt 0 -or -not $allPass) { 'FAIL' }
 		else { 'PASS' }
 	if ($status -ne 'PASS') { $totalFail++ }
